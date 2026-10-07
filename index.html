@@ -146,16 +146,16 @@ async function sendToGemini(blob) {
 
   const body = {
     contents: contents,
-    config: {
-      responseModalities: ['AUDIO'],
-      systemInstruction: {
-        parts: [{ text:
-          "You are a Kurdish Sorani voice translator. Listen to the English speech the user sends you. " +
-          "Translate it into fluent, natural, well-structured Sorani Kurdish (کوردی سۆرانیی ستاندارد). " +
-          "Reply ONLY in spoken Kurdish Sorani. Never use any other language. " +
-          "If the user asks a question, answer it in Kurdish Sorani too."
-        }]
-      }
+    systemInstruction: {
+      parts: [{ text:
+        "You are a Kurdish Sorani voice translator. Listen to the English speech the user sends you. " +
+        "Translate it into fluent, natural, well-structured Sorani Kurdish (کوردی سۆرانیی ستاندارد). " +
+        "Reply ONLY in spoken Kurdish Sorani. Never use any other language. " +
+        "If the user asks a question, answer it in Kurdish Sorani too."
+      }]
+    },
+    generationConfig: {
+      responseModalities: ['AUDIO']
     }
   };
 
