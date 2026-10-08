@@ -26,6 +26,8 @@ input,select{width:100%;padding:10px;border-radius:10px;border:1px solid #4a7c9b
 .pair{background:rgba(26,127,90,.3);border-radius:12px;padding:8px 12px;margin-bottom:8px}
 .en{direction:ltr;text-align:left;font-size:.75rem;color:#9fb8c4;margin-bottom:3px}
 .ku{font-size:1.05rem;line-height:1.7}
+#lvlw{width:100%;max-width:300px;height:8px;background:rgba(255,255,255,.12);border-radius:4px;margin-top:8px;overflow:hidden}
+#lvl{height:100%;width:0;background:#7f8c8d}
 .hint{font-size:.75rem;color:#8aa5b3;text-align:center;max-width:480px;margin-top:6px;line-height:1.6}
 .hidden{display:none!important}
 </style>
@@ -47,6 +49,12 @@ input,select{width:100%;padding:10px;border-radius:10px;border:1px solid #4a7c9b
   <select id="speed"><option value="1">ئاسایی</option><option value="1.15">خێرا</option><option value="1.3">زۆر خێرا</option></select>
   <label>جێگیری دەنگی کوردی (دژی پچڕان)</label>
   <select id="buf"><option value="200">کەم — خێراترین</option><option value="400">ناوەند — پێشنیارکراو</option><option value="700">زۆر — بێ پچڕانترین</option></select>
+  <label>مۆدی مایک</label>
+  <select id="mm"><option value="n">ئاسایی — بۆ یاری (پێشنیارکراو)</option><option value="c">پاککردنەوەی دەنگی پشتەوە</option><option value="o">خاو — بێ دەستکاری</option></select>
+  <label>بەرزکردنەوەی دەنگی مایک</label>
+  <select id="mg"><option value="1">×1</option><option value="2">×2</option><option value="3">×3</option><option value="4">×4</option></select>
+  <label>هەستیاری گوێگرتن</label>
+  <select id="sn"><option value="0.004">زۆر هەستیار</option><option value="0.008">ناوەند</option><option value="0.015">کەم</option></select>
   <label>بڕینی ڕستەکان (ڕێکخستنی ڕستە)</label>
   <select id="seg"><option value="250">زۆر خێرا — ڕستەی کورت</option><option value="600">ڕێکخراو — پێشنیارکراو</option><option value="1000">وردتر — دواکەوتنی زیاتر</option></select>
   <label>بەرزی دەنگی کوردی</label>
@@ -58,6 +66,7 @@ input,select{width:100%;padding:10px;border-radius:10px;border:1px solid #4a7c9b
 <div id="main" class="hidden">
   <div id="st">ئامادەیە</div>
   <button id="mic">🎤</button>
+  <div id="lvlw"><div id="lvl"></div></div>
   <div class="hint">یەکجار دایبگرە بۆ دەستپێکردن، دووبارە دایبگرە بۆ وەستاندن. بۆ باشترین ئەنجام هێدفۆن بەکاربهێنە.</div>
   <div id="log"></div>
   <button class="btn" id="cfg" style="max-width:200px;background:#34495e">ڕێکخستنەکان</button>
@@ -75,6 +84,7 @@ if(ls.get('m'))$('model').value=ls.get('m');
 if(ls.get('s'))$('speed').value=ls.get('s');
 if(ls.get('sg'))$('seg').value=ls.get('sg');
 $('buf').value=ls.get('bf')||'400';
+$('mm').value=ls.get('mm')||'n';$('mg').value=ls.get('mg')||'2';$('sn').value=ls.get('sn')||'0.008';
 if(ls.get('v'))$('vol').value=ls.get('v');
 $('mute').checked=ls.get('mu')==='1';
 if(ls.get('k'))showMain();
@@ -82,7 +92,7 @@ if(ls.get('k'))showMain();
 $('save').onclick=()=>{
   const k=$('key').value.trim();
   if(!k){alert('کلیلەکە بنووسە');return}
-  ls.set('k',k);ls.set('m',$('model').value);ls.set('s',$('speed').value);ls.set('mu',$('mute').checked?'1':'0');ls.set('sg',$('seg').value);ls.set('bf',$('buf').value);ls.set('v',$('vol').value);
+  ls.set('k',k);ls.set('m',$('model').value);ls.set('s',$('speed').value);ls.set('mu',$('mute').checked?'1':'0');ls.set('sg',$('seg').value);ls.set('bf',$('buf').value);ls.set('mm',$('mm').value);ls.set('mg',$('mg').value);ls.set('sn',$('sn').value);ls.set('v',$('vol').value);
   showMain();
 };
 $('cfg').onclick=()=>{stop();$('main').classList.add('hidden');$('setup').classList.remove('hidden')};
@@ -127,8 +137,11 @@ registerProcessor('q',Q)`;
     pnode.connect(gain);
   }catch(err){st('❌ دەنگ: '+err.message);stop();return}
   try{
-    mic=await navigator.mediaDevices.getUserMedia({audio:{echoCancellation:true,noiseSuppression:true,autoGainControl:true,channelCount:1}});
-    actx=new (window.AudioContext||window.webkitAudioContext)();
+    const mm=ls.get('mm')||'n',cs=mm==='c'?{echoCancellation:true,noiseSuppression:true,autoGainControl:true}:mm==='o'?{echoCancellation:false,noiseSuppression:false,autoGainControl:false}:{echoCancellation:true,noiseSuppression:false,autoGainControl:true};
+    mic=await navigator.mediaDevices.getUserMedia({audio:{...cs,channelCount:1}});
+    const AC=window.AudioContext||window.webkitAudioContext;
+    actx=new AC({sampleRate:16000});
+    try{actx.createMediaStreamSource(mic)}catch(e){await actx.close();actx=new AC()}
     const code="class P extends AudioWorkletProcessor{process(i){const c=i[0][0];if(c)this.port.postMessage(c.slice(0));return true}}registerProcessor('p',P)";
     await actx.audioWorklet.addModule(URL.createObjectURL(new Blob([code],{type:'application/javascript'})));
     const src=actx.createMediaStreamSource(mic);
@@ -209,11 +222,12 @@ function feed(f){
   if(accLen<need)return;
   const all=new Float32Array(accLen);let o=0;for(const a of acc){all.set(a,o);o+=a.length}
   acc=[];accLen=0;
-  const n=640,ratio=all.length/n,out=new Int16Array(n);
+  const n=640,ratio=all.length/n,out=new Int16Array(n),g=parseFloat(ls.get('mg')||'2');
   for(let i=0;i<n;i++){
-    const p=i*ratio,j=Math.floor(p),fr=p-j,a=all[j],b=all[Math.min(j+1,all.length-1)];
-    const s=Math.max(-1,Math.min(1,a+(b-a)*fr));
-    out[i]=s<0?s*32768:s*32767;
+    const a=Math.floor(i*ratio),b=Math.max(a+1,Math.floor((i+1)*ratio));let t=0;
+    for(let j=a;j<b&&j<all.length;j++)t+=all[j];
+    const v=Math.max(-1,Math.min(1,t/(b-a)*g));
+    out[i]=v<0?v*32768:v*32767;
   }
   onChunk(out);
 }
@@ -249,11 +263,12 @@ function onChunk(c){
   let e=0;for(let i=0;i<c.length;i++){const v=c[i]/32768;e+=v*v}
   const rms=Math.sqrt(e/c.length);
   if(rms<floor)floor=rms;else floor+=(rms-floor)*0.002;
-  let thr=Math.max(0.012,floor*2.5);
+  let thr=Math.max(parseFloat(ls.get('sn')||'0.008'),floor*2.2);
   if(speaking)thr*=2;
   const sp=rms>thr,endMs=parseInt(ls.get('sg')||'600');
+  const L=$('lvl');if(L){L.style.width=Math.min(100,rms*500)+'%';L.style.background=sp?'#2ecc71':'#7f8c8d'}
   if(!seg){
-    pre.push(c);if(pre.length>5)pre.shift();
+    pre.push(c);if(pre.length>10)pre.shift();
     if(sp){seg={c:pre.slice(),sent:0};pre=[];silence=0;if(!busy&&!queue.length)goLive()}
   }else{
     seg.c.push(c);if(live)flushLive(seg);
