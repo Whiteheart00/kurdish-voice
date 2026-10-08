@@ -57,13 +57,13 @@ input,select{width:100%;padding:10px;border-radius:10px;border:1px solid #4a7c9b
   <label>مۆدی مایک</label>
   <select id="mm"><option value="n">ئاسایی — بۆ یاری (پێشنیارکراو)</option><option value="c">پاککردنەوەی دەنگی پشتەوە</option><option value="o">خاو — بێ دەستکاری</option></select>
   <label>بەرزکردنەوەی دەنگی مایک</label>
-  <select id="mg"><option value="1">×1</option><option value="2">×2</option><option value="3">×3</option><option value="4">×4</option></select>
+  <select id="mg"><option value="1">×1</option><option value="2">×2</option><option value="3">×3</option><option value="4">×4</option><option value="6">×6</option><option value="8">×8</option></select>
   <label>هەستیاری گوێگرتن</label>
-  <select id="sn"><option value="0.004">زۆر هەستیار</option><option value="0.008">ناوەند</option><option value="0.015">کەم</option></select>
+  <select id="sn"><option value="0.004">زۆر هەستیار</option><option value="0.008">ناوەند</option><option value="0.015">کەم</option><option value="0.03">زۆر کەم</option><option value="0.06">کەمترین</option></select>
   <label>بڕینی ڕستەکان (ڕێکخستنی ڕستە)</label>
   <select id="seg"><option value="250">زۆر خێرا — ڕستەی کورت</option><option value="600">ڕێکخراو — پێشنیارکراو</option><option value="1000">وردتر — دواکەوتنی زیاتر</option></select>
   <label>بەرزی دەنگی کوردی</label>
-  <input type="range" id="vol" min="0.2" max="1" step="0.1" value="1">
+  <input type="range" id="vol" min="0.2" max="3" step="0.1" value="1">
   <div class="row"><input type="checkbox" id="mute"><span>مایک بکوژێنەوە کاتێک کوردی دەگوترێت (ئەگەر هێدفۆن نییە)</span></div>
   <label>شێوازی وەرگێڕان</label>
   <select id="md"><option value="a">دوو قۆناغ — تێگەیشتنی وردتر (پێشنیارکراو)</option><option value="f">یەک قۆناغ — خێراتر</option></select>
@@ -89,7 +89,7 @@ input,select{width:100%;padding:10px;border-radius:10px;border:1px solid #4a7c9b
   <div id="lvlw"><div id="lvl"></div><div id="thr"></div></div>
   <div class="hint">یەکجار دایبگرە بۆ دەستپێکردن، دووبارە دایبگرە بۆ وەستاندن. بۆ باشترین ئەنجام هێدفۆن بەکاربهێنە.</div>
   <div id="stat"></div>
-  <div class="bar"><button id="clr">🗑️ پاککردنەوە</button><button id="cpy">📋 کۆپی</button><button id="vdb"></button></div>
+  <div class="bar"><button id="clr">🗑️ پاککردنەوە</button><button id="cpy">📋 کۆپی</button><button id="vdb"></button><button id="calb">🎚️ کالیبرکردن</button></div>
   <div id="log"></div>
   <button class="btn" id="cfg" style="max-width:200px;background:#34495e">ڕێکخستنەکان</button>
 </div>
@@ -99,6 +99,7 @@ const $=id=>document.getElementById(id);
 const ls={get:k=>{try{return localStorage.getItem(k)}catch(e){return null}},set:(k,v)=>{try{localStorage.setItem(k,v)}catch(e){}}};
 let ws=null,ready=false,want=false,mic=null,actx=null,node=null,acc=[],accLen=0;
 let gain=null,pctx=null,pnode=null,cur=null,speaking=false;
+let calUntil=0,calMax=0;
 let speakQ=[],busyT=false,lastEn=[],lastReq=0,tmr=null;
 let resumeH=null,retry=0,pendingReset=false,wl=null,tAct=0,lats=[],histLoaded=false;
 let queue=[],seg=null,busy=false,live=false,silence=0,floor=0.01,pre=[],wd=null;
@@ -117,7 +118,7 @@ if(ls.get('k'))showMain();
 $('save').onclick=()=>{
   const k=$('key').value.trim();
   if(!k){alert('کلیلەکە بنووسە');return}
-  ls.set('k',k);ls.set('m',$('model').value);ls.set('s',$('speed').value);ls.set('mu',$('mute').checked?'1':'0');ls.set('sg',$('seg').value);ls.set('bf',$('buf').value);ls.set('mm',$('mm').value);ls.set('vc',$('vc').value);ls.set('md',$('md').value);ls.set('fx',$('fx').value);ls.set('tm',$('tm').value);ls.set('rp',$('rp').value);ls.set('gl',$('gl').value);ls.set('fs',$('fs').value);ls.set('en',$('en').checked?'1':'0');ls.set('mg',$('mg').value);ls.set('sn',$('sn').value);ls.set('v',$('vol').value);
+  ls.set('k',k);ls.set('m',$('model').value);ls.set('s',$('speed').value);ls.set('mu',$('mute').checked?'1':'0');ls.set('sg',$('seg').value);ls.set('bf',$('buf').value);ls.set('mm',$('mm').value);ls.set('vc',$('vc').value);ls.set('md',$('md').value);ls.set('fx',$('fx').value);ls.set('tm',$('tm').value);ls.set('rp',$('rp').value);ls.set('gl',$('gl').value);ls.set('fs',$('fs').value);ls.set('en',$('en').checked?'1':'0');ls.set('mg',$('mg').value);if($('sn').value!==ls.get('sn'))ls.set('cal','');ls.set('sn',$('sn').value);ls.set('v',$('vol').value);
   showMain();
 };
 $('cfg').onclick=()=>{stop();$('main').classList.add('hidden');$('setup').classList.remove('hidden')};
@@ -140,6 +141,10 @@ function saveH(c){
 }
 $('mic').onclick=()=>want?stop():start();
 updVd();
+$('calb').onclick=()=>{
+  if(!want){st('یەکەم مایک دەستپێبکە، پاشان کالیبرکردن بکە');return}
+  calMax=0;calUntil=Date.now()+3000;st('🎚️ ٣ چرکە: یارییەکە بە دەنگی پشتەوە (مۆسیقا/ئێفێکت) بێت، بەبێ قسە...');
+};
 $('vdb').onclick=()=>{ls.set('vd',vdOn()?'0':'1');updVd();st(vdOn()?'✂️ دوای هەر ڕاگرتنێکی دەنگ ڕستە دەبڕدرێت':'✂️ بڕینی دەنگ کوژایەوە — بە کات دەبڕدرێت')};
 $('clr').onclick=()=>{$('log').innerHTML='';ls.set('h','[]');cur=null};
 $('cpy').onclick=async()=>{
@@ -407,11 +412,17 @@ function endSeg(){
   updQ();pump();
 }
 function onChunk(c){
+  if(calUntil){
+    let q=0;for(let i=0;i<c.length;i++){const v=c[i]/32768;q+=v*v}
+    const r=Math.sqrt(q/c.length);
+    if(Date.now()<calUntil)calMax=Math.max(calMax,r);
+    else{calUntil=0;ls.set('cal',Math.max(0.004,calMax*1.6).toFixed(4));st('✅ کالیبرکرا — ئاستی بڕین: '+ls.get('cal'))}
+  }
   if(isTr()){sendChunk(c);return}
   let e=0;for(let i=0;i<c.length;i++){const v=c[i]/32768;e+=v*v}
   const rms=Math.sqrt(e/c.length);
   if(rms<floor)floor=rms;else floor+=(rms-floor)*0.002;
-  let thr=Math.max(parseFloat(ls.get('sn')||'0.008'),floor*2.2);
+  let thr=Math.max(parseFloat(ls.get('cal')||ls.get('sn')||'0.008'),floor*2.2);
   if(speaking)thr*=2;
   const sp=rms>thr,endMs=parseInt(ls.get('sg')||'600');
   const T=$('thr');if(T)T.style.left=Math.min(100,thr*500)+'%';
