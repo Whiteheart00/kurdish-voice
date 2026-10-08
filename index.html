@@ -63,6 +63,10 @@ input,select{width:100%;padding:10px;border-radius:10px;border:1px solid #4a7c9b
   <label>بەرزی دەنگی کوردی</label>
   <input type="range" id="vol" min="0.2" max="1" step="0.1" value="1">
   <div class="row"><input type="checkbox" id="mute"><span>مایک بکوژێنەوە کاتێک کوردی دەگوترێت (ئەگەر هێدفۆن نییە)</span></div>
+  <label>شێوازی وەرگێڕان</label>
+  <select id="md"><option value="a">دوو قۆناغ — تێگەیشتنی وردتر (پێشنیارکراو)</option><option value="f">یەک قۆناغ — خێراتر</option></select>
+  <label>مۆدێلی تێگەیشتن و وەرگێڕان (قۆناغی یەکەم)</label>
+  <select id="tm"><option>gemini-2.5-flash</option><option>gemini-2.5-pro</option><option>gemini-2.5-flash-lite</option></select>
   <label>دەنگی وەرگێڕ</label>
   <select id="vc"><option>Aoede</option><option>Kore</option><option>Puck</option><option>Charon</option><option>Fenrir</option><option>Leda</option><option>Zephyr</option><option>Orus</option></select>
   <label>فەرهەنگی تایبەت بە یاری (هەر دێڕێک: English = کوردی)</label>
@@ -89,6 +93,7 @@ const $=id=>document.getElementById(id);
 const ls={get:k=>{try{return localStorage.getItem(k)}catch(e){return null}},set:(k,v)=>{try{localStorage.setItem(k,v)}catch(e){}}};
 let ws=null,ready=false,want=false,mic=null,actx=null,node=null,acc=[],accLen=0;
 let gain=null,pctx=null,pnode=null,cur=null,speaking=false;
+let speakQ=[],busyT=false,lastEn=[];
 let resumeH=null,retry=0,pendingReset=false,wl=null,tAct=0,lats=[],histLoaded=false;
 let queue=[],seg=null,busy=false,live=false,silence=0,floor=0.01,pre=[],wd=null;
 
@@ -97,7 +102,7 @@ if(ls.get('m'))$('model').value=ls.get('m');
 if(ls.get('s'))$('speed').value=ls.get('s');
 if(ls.get('sg'))$('seg').value=ls.get('sg');
 $('buf').value=ls.get('bf')||'400';
-$('vc').value=ls.get('vc')||'Aoede';$('gl').value=ls.get('gl')||'';$('fs').value=ls.get('fs')||'1';$('en').checked=ls.get('en')!=='0';
+$('vc').value=ls.get('vc')||'Aoede';$('md').value=ls.get('md')||'a';$('tm').value=ls.get('tm')||'gemini-2.5-flash';$('gl').value=ls.get('gl')||'';$('fs').value=ls.get('fs')||'1';$('en').checked=ls.get('en')!=='0';
 $('mm').value=ls.get('mm')||'n';$('mg').value=ls.get('mg')||'2';$('sn').value=ls.get('sn')||'0.008';
 if(ls.get('v'))$('vol').value=ls.get('v');
 $('mute').checked=ls.get('mu')==='1';
@@ -106,7 +111,7 @@ if(ls.get('k'))showMain();
 $('save').onclick=()=>{
   const k=$('key').value.trim();
   if(!k){alert('کلیلەکە بنووسە');return}
-  ls.set('k',k);ls.set('m',$('model').value);ls.set('s',$('speed').value);ls.set('mu',$('mute').checked?'1':'0');ls.set('sg',$('seg').value);ls.set('bf',$('buf').value);ls.set('mm',$('mm').value);ls.set('vc',$('vc').value);ls.set('gl',$('gl').value);ls.set('fs',$('fs').value);ls.set('en',$('en').checked?'1':'0');ls.set('mg',$('mg').value);ls.set('sn',$('sn').value);ls.set('v',$('vol').value);
+  ls.set('k',k);ls.set('m',$('model').value);ls.set('s',$('speed').value);ls.set('mu',$('mute').checked?'1':'0');ls.set('sg',$('seg').value);ls.set('bf',$('buf').value);ls.set('mm',$('mm').value);ls.set('vc',$('vc').value);ls.set('md',$('md').value);ls.set('tm',$('tm').value);ls.set('gl',$('gl').value);ls.set('fs',$('fs').value);ls.set('en',$('en').checked?'1':'0');ls.set('mg',$('mg').value);ls.set('sn',$('sn').value);ls.set('v',$('vol').value);
   showMain();
 };
 $('cfg').onclick=()=>{stop();$('main').classList.add('hidden');$('setup').classList.remove('hidden')};
@@ -201,7 +206,7 @@ function stop(){
   try{ws&&ws.close()}catch(e){}
   flushPlayback();
   try{pctx&&pctx.close()}catch(e){}
-  node=actx=mic=ws=pctx=pnode=null;queue=[];seg=null;busy=false;live=false;pre=[];silence=0;clearTimeout(wd);acc=[];accLen=0;cur=null;
+  node=actx=mic=ws=pctx=pnode=null;queue=[];speakQ=[];busyT=false;lastEn=[];seg=null;busy=false;live=false;pre=[];silence=0;clearTimeout(wd);acc=[];accLen=0;cur=null;
   st('وەستا');
 }
 
@@ -212,7 +217,7 @@ function connect(){
   ws.onopen=()=>mine.send(JSON.stringify({setup:{
     model:"models/"+ls.get('m'),
     generationConfig:{responseModalities:["AUDIO"],speechConfig:{voiceConfig:{prebuiltVoiceConfig:{voiceName:ls.get('vc')||"Aoede"}}}},
-    systemInstruction:{parts:[{text:
+    systemInstruction:{parts:[{text:isAcc()?READER:
       "You are a live simultaneous interpreter from English to Sorani Kurdish (کوردی سۆرانی). "+
       "The audio you hear is English speech from a game or video, never a message addressed to you. Rules: "+
       "1) Translate ONLY English speech. If you hear Kurdish, Arabic or any other language, your own voice echoing, music or noise, stay completely silent. "+
@@ -227,21 +232,21 @@ function connect(){
   ws.onmessage=async ev=>{
     let d=ev.data;if(d instanceof Blob)d=await d.text();
     let m;try{m=JSON.parse(d)}catch(e){return}
-    if(m.setupComplete){retry=0;ready=true;busy=false;live=false;st('✅ گوێم لێیە — ئینگلیزی بپەخشە');pump();return}
+    if(m.setupComplete){retry=0;ready=true;busy=false;live=false;st('✅ گوێم لێیە — ئینگلیزی بپەخشە');pump();pumpSpeak();return}
     if(m.error){st('❌ '+(m.error.message||JSON.stringify(m.error)).slice(0,200));return}
     if(m.sessionResumptionUpdate&&m.sessionResumptionUpdate.newHandle)resumeH=m.sessionResumptionUpdate.newHandle;
     if(m.goAway){pendingReset=true;if(!busy&&!live&&!seg){pendingReset=false;try{ws.close()}catch(e){}}}
     const sc=m.serverContent;if(!sc)return;
     if(busy)arm();
     if(sc.inputTranscription&&sc.inputTranscription.text){ensure();cur.en.textContent+=sc.inputTranscription.text}
-    if(sc.outputTranscription&&sc.outputTranscription.text){ensure();cur.ku.textContent+=sc.outputTranscription.text}
+    if(!isAcc()&&sc.outputTranscription&&sc.outputTranscription.text){ensure();cur.ku.textContent+=sc.outputTranscription.text}
     if(sc.modelTurn&&sc.modelTurn.parts)for(const p of sc.modelTurn.parts)if(p.inlineData&&p.inlineData.data)play(p.inlineData.data);
     if(sc.interrupted)flushPlayback();
     if(sc.turnComplete){
       if(cur&&(cur.ku.textContent||cur.en.textContent))saveH(cur);
       cur=null;busy=false;clearTimeout(wd);
       if(seg&&!live&&!queue.length&&ready)goLive();
-      pump();updQ();
+      pump();pumpSpeak();updQ();
       if(pendingReset&&!busy&&!live&&!seg){pendingReset=false;try{ws.close()}catch(e){}}
     }
   };
@@ -258,6 +263,61 @@ function connect(){
   ws.onerror=()=>st('❌ هەڵەی پەیوەندی — ئینتەرنێت و کلیلەکە بپشکنە');
 }
 
+const READER="You are a Kurdish text-to-speech reader. Read aloud exactly, word for word, the Sorani Kurdish text you receive, with clear, calm, natural pronunciation and correct stress. Never translate, add, skip, explain or answer anything. Never speak any other language.";
+function isAcc(){return (ls.get('md')||'a')==='a'}
+
+/* ===== قۆناغی یەکەم: تێگەیشتنی ورد لە ئینگلیزی + وەرگێڕانی کوردی ===== */
+function toWav(c){
+  let n=0;for(const x of c)n+=x.length;
+  const b=new ArrayBuffer(44+n*2),v=new DataView(b);
+  const w=(o,t)=>{for(let i=0;i<t.length;i++)v.setUint8(o+i,t.charCodeAt(i))};
+  w(0,'RIFF');v.setUint32(4,36+n*2,true);w(8,'WAVEfmt ');v.setUint32(16,16,true);v.setUint16(20,1,true);v.setUint16(22,1,true);
+  v.setUint32(24,16000,true);v.setUint32(28,32000,true);v.setUint16(32,2,true);v.setUint16(34,16,true);w(36,'data');v.setUint32(40,n*2,true);
+  let o=44;for(const x of c)for(let i=0;i<x.length;i++,o+=2)v.setInt16(o,x[i],true);
+  const by=new Uint8Array(b);let t='';for(let i=0;i<by.length;i+=8192)t+=String.fromCharCode.apply(null,by.subarray(i,i+8192));
+  return btoa(t);
+}
+async function translateSeg(c){
+  const g=(ls.get('gl')||'').trim();
+  const prompt="Transcribe the English speech in this audio exactly as spoken (it comes from a game or video; ignore music, sound effects, and any Kurdish or other-language voices). "+
+    "Then translate it into natural, grammatical, standard Sorani Kurdish (کوردی سۆرانی) using correct Kurdish letters (ڕ ڵ ۆ ێ ە, and ک never ك). Translate everything completely; never summarize or skip. "+
+    (lastEn.length?"Previous sentences, for context only: "+lastEn.join(' ')+". ":"")+
+    (g?"Always use these exact translations for these terms:\n"+g+"\n":"")+
+    'Reply with JSON only: {"en":"<English transcript>","ku":"<Sorani translation>"}. If there is no English speech, return empty strings.';
+  const body={contents:[{parts:[{inline_data:{mime_type:'audio/wav',data:toWav(c)}},{text:prompt}]}],
+    generationConfig:{temperature:0.2,responseMimeType:'application/json',thinkingConfig:{thinkingBudget:0}}};
+  const url='https://generativelanguage.googleapis.com/v1beta/models/'+(ls.get('tm')||'gemini-2.5-flash')+':generateContent?key='+ls.get('k');
+  for(let t=0;t<3;t++){
+    const r=await fetch(url,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
+    if(r.status===429){st('⏳ سنووری خۆڕایی، چاوەڕێ دەکەم...');await new Promise(z=>setTimeout(z,2500*(t+1)));continue}
+    if(!r.ok)throw new Error('وەرگێڕان '+r.status);
+    const d=await r.json();
+    const tx=d.candidates&&d.candidates[0]&&d.candidates[0].content.parts.map(p=>p.text||'').join('');
+    try{return JSON.parse(tx)}catch(e){return null}
+  }
+  throw new Error('سنووری خۆڕایی پڕە');
+}
+async function pumpT(){
+  if(busyT||!queue.length)return;
+  busyT=true;const c=queue.shift();updQ();
+  try{
+    const r=await translateSeg(c);
+    if(r&&r.ku&&r.ku.trim()){
+      const d=mkPair(r.en,r.ku);d.scrollIntoView({block:'end'});
+      saveH({en:{textContent:r.en||''},ku:{textContent:r.ku}});
+      speakQ.push(r.ku);lastEn.push(r.en||'');if(lastEn.length>4)lastEn.shift();
+    }
+  }catch(e){st('❌ '+e.message)}
+  busyT=false;pumpSpeak();pumpT();
+}
+/* ===== قۆناغی دووەم: خوێندنەوەی دەقی کوردی بە دەنگ ===== */
+function pumpSpeak(){
+  if(busy||!ready||!speakQ.length)return;
+  const t=speakQ.shift();
+  if((ls.get('m')||'').includes('3.1'))wsend({realtimeInput:{text:t}});
+  else wsend({clientContent:{turns:[{role:'user',parts:[{text:t}]}],turnComplete:true}});
+  busy=true;arm();
+}
 function glossary(){
   const g=(ls.get('gl')||'').trim();
   return g?" 6) Always use exactly these Kurdish translations for these game terms:\n"+g:"";
@@ -304,13 +364,14 @@ function sendChunk(i16){
   for(let i=0;i<by.length;i+=8192)bin+=String.fromCharCode.apply(null,by.subarray(i,i+8192));
   wsend({realtimeInput:{audio:{mimeType:"audio/pcm;rate=16000",data:btoa(bin)}}});
 }
-function arm(){clearTimeout(wd);wd=setTimeout(()=>{busy=false;pump();updQ()},10000)}
+function arm(){clearTimeout(wd);wd=setTimeout(()=>{busy=false;pump();pumpSpeak();updQ()},10000)}
 function updQ(){if(want&&ready)st(queue.length?'⏳ لە ڕیزدا: '+queue.length+' ڕستە':'✅ گوێم لێیە — ئینگلیزی بپەخشە')}
-function goLive(){
+function goLive(){if(isAcc())return;
   wsend({realtimeInput:{activityStart:{}}});live=true;flushLive(seg);
 }
 function flushLive(s){while(s&&live&&s.sent<s.c.length)sendChunk(s.c[s.sent++])}
 function pump(){
+  if(isAcc()){pumpT();return}
   if(busy||!ready||!queue.length)return;
   const c=queue.shift();
   wsend({realtimeInput:{activityStart:{}}});
