@@ -24,9 +24,21 @@ input,select{width:100%;padding:10px;border-radius:10px;border:1px solid #4a7c9b
 #st{font-size:.9rem;color:#ffd166;min-height:22px;text-align:center;max-width:480px;word-break:break-word}
 #log{width:100%;max-width:480px;max-height:42vh;overflow-y:auto;margin-top:8px}
 .pair{background:rgba(26,127,90,.3);border-radius:12px;padding:8px 12px;margin-bottom:8px}
+.pair{cursor:pointer}
 .en{direction:ltr;text-align:left;font-size:.75rem;color:#9fb8c4;margin-bottom:3px}
 .ku{font-size:1.05rem;line-height:1.7}
 .hint{font-size:.75rem;color:#8aa5b3;text-align:center;max-width:480px;margin-top:6px;line-height:1.6}
+.fl summary{cursor:pointer;font-weight:bold;font-size:.95rem;color:#8fd3f4;list-style:none}
+.fl summary::-webkit-details-marker{display:none}
+.fr{margin-top:10px}
+.fr .t{display:flex;justify-content:space-between;gap:8px;font-size:.78rem;color:#a8d8ea;margin-bottom:2px}
+.fr .t b{color:#ffd166;direction:ltr;font-weight:normal;white-space:nowrap}
+.fr input[type=range]{padding:0;height:28px}
+#meter{position:relative;height:16px;border-radius:8px;background:rgba(0,0,0,.4);overflow:hidden;direction:ltr;margin-top:10px}
+#mbar{position:absolute;left:0;top:0;bottom:0;width:0;background:#7f8c8d}
+#mbar.hot{background:#2ecc71}
+#mthr{position:absolute;top:0;bottom:0;width:3px;background:#ff6b6b;left:30%}
+.mini{width:100%;padding:10px;border:none;border-radius:10px;background:#34495e;color:#fff;font-size:.9rem;margin-top:10px}
 .hidden{display:none!important}
 </style>
 </head>
@@ -59,7 +71,25 @@ input,select{width:100%;padding:10px;border-radius:10px;border:1px solid #4a7c9b
   <div id="st">ئامادەیە</div>
   <button id="mic">🎤</button>
   <div class="hint">یەکجار دایبگرە بۆ دەستپێکردن، دووبارە دایبگرە بۆ وەستاندن. بۆ باشترین ئەنجام هێدفۆن بەکاربهێنە.</div>
-  <div id="log"></div>
+  <details class="card fl" id="flt" open>
+<summary>🎚️ فلتەری دەنگی دەوروبەر — ڕاستەوخۆ</summary>
+<div id="meter"><div id="mbar"></div><div id="mthr"></div></div>
+<div class="hint" style="margin:4px 0 0">هێڵە سوورەکە دەروازەیە؛ کاتێک بارەکە لێی تێپەڕێت (سەوز دەبێت) دەنگەکە دەنێردرێت بۆ وەرگێڕان.</div>
+<div class="fr"><div class="t"><span>دەروازەی دەنگ — بەرزتر = کەمتر هەستیار</span><b id="v_thr"></b></div><input type="range" id="f_thr" min="0.01" max="0.3" step="0.005"></div>
+<div class="fr"><div class="t"><span>هەستیاری مایک — کەمتر = دەنگی دوور نابیسترێت</span><b id="v_gain"></b></div><input type="range" id="f_gain" min="0.2" max="2" step="0.1"></div>
+<div class="fr"><div class="t"><span>بڕینی دەنگی قەڵەو و گڕەگڕ (Hz)</span><b id="v_hp"></b></div><input type="range" id="f_hp" min="0" max="600" step="10"></div>
+<div class="fr"><div class="t"><span>بڕینی دەنگی تیژ و هیس (Hz)</span><b id="v_lp"></b></div><input type="range" id="f_lp" min="2000" max="8000" step="250"></div>
+<div class="fr"><div class="t"><span>زیرەکی دژی دەنگی دەوروبەر (خۆکار)</span><b id="v_mult"></b></div><input type="range" id="f_mult" min="1" max="6" step="0.5"></div>
+<div class="fr"><div class="t"><span>کەمترین ماوەی دەنگ — دەنگی زۆر کورت فڕێدەدات</span><b id="v_min"></b></div><input type="range" id="f_min" min="0" max="400" step="40"></div>
+<div class="row"><input type="checkbox" id="f_ns"><span>کەمکردنەوەی دەنگی دەوروبەری وێبگەڕ</span></div>
+<div class="row"><input type="checkbox" id="f_agc"><span>بەرزکردنەوەی دەنگی خۆکار (AGC) — بیکوژێنەرەوە بۆ ئەوەی دەنگی دوور نەگرێت</span></div>
+<button class="mini" id="f_cal">🎯 پێوانەکردنی خۆکار (٣ چرکە)</button>
+<div class="hint">بۆ پێوانەکردن: با ئەو دەنگانەی نایانەوێت (خەڵک، ژوور) هەبن و یاری یان ڤیدیۆکە بوەستێنە.</div>
+<button class="mini" id="f_rst" style="background:#555">گەڕاندنەوەی ڕێکخستنە بنەڕەتییەکان</button>
+</details>
+<div style="display:flex;gap:8px;width:100%;max-width:480px"><button class="mini" id="cp" style="margin:0">📋 کۆپیکردنی هەموو وەرگێڕانەکان</button><button class="mini" id="clr" style="margin:0;width:70px;background:#7f3b3b">🗑️</button></div>
+<div class="hint">پەنجە بنێ بە هەر ڕستەیەک بۆ کۆپیکردنی تەنها ئەو ڕستەیە.</div>
+<div id="log"></div>
   <button class="btn" id="cfg" style="max-width:200px;background:#34495e">ڕێکخستنەکان</button>
 </div>
 
@@ -77,6 +107,50 @@ if(ls.get('sg'))$('seg').value=ls.get('sg');
 $('buf').value=ls.get('bf')||'400';
 if(ls.get('v'))$('vol').value=ls.get('v');
 $('mute').checked=ls.get('mu')==='1';
+
+/* ===== فلتەری دەنگی دەوروبەر ===== */
+const FD={thr:0.03,gain:1,mult:3,min:80,hp:150,lp:6500,agc:0,ns:1};
+let F=Object.assign({},FD),hpN=[],lpN=[],gN=null,calib=null,hot=0,lastMeter=0;
+try{Object.assign(F,JSON.parse(ls.get('flt')||'{}'))}catch(e){}
+const FM={thr:v=>(v*100).toFixed(1),gain:v=>'×'+(+v).toFixed(1),mult:v=>'×'+(+v).toFixed(1),min:v=>v+' ms',hp:v=>+v?v+' Hz':'ناچالاک',lp:v=>v+' Hz'};
+const saveF=()=>ls.set('flt',JSON.stringify(F));
+function mpos(v){return Math.min(1,Math.sqrt(v/0.3))*100}
+function applyF(){
+  for(const k in FM)$('v_'+k).textContent=FM[k](F[k]);
+  hpN.forEach(n=>n.frequency.value=Math.max(10,F.hp));
+  lpN.forEach(n=>n.frequency.value=F.lp);
+  if(gN)gN.gain.value=F.gain;
+}
+function applyMic(){
+  const t=mic&&mic.getAudioTracks()[0];
+  if(t&&t.applyConstraints)t.applyConstraints({autoGainControl:!!F.agc,noiseSuppression:!!F.ns}).catch(()=>{});
+}
+function syncUI(){
+  for(const k in FM)$('f_'+k).value=F[k];
+  $('f_agc').checked=!!F.agc;$('f_ns').checked=!!F.ns;applyF();
+}
+function meter(rms,thr,sp){
+  const t=performance.now();if(t-lastMeter<60)return;lastMeter=t;
+  $('mbar').style.width=mpos(rms)+'%';$('mbar').classList.toggle('hot',sp);
+  $('mthr').style.left=mpos(thr)+'%';
+}
+for(const k in FM)$('f_'+k).oninput=()=>{F[k]=parseFloat($('f_'+k).value);applyF();saveF()};
+$('f_agc').onchange=()=>{F.agc=$('f_agc').checked?1:0;saveF();applyMic()};
+$('f_ns').onchange=()=>{F.ns=$('f_ns').checked?1:0;saveF();applyMic()};
+$('f_rst').onclick=()=>{F=Object.assign({},FD);syncUI();saveF();applyMic()};
+$('f_cal').onclick=()=>{
+  if(!want||!ready||calib){st('⚠️ سەرەتا مایک دەستپێبکە و چاوەڕێ بە تا ئامادە دەبێت');return}
+  calib=[];st('🎯 پێوانە دەکرێت... ٣ چرکە');
+  setTimeout(()=>{
+    const a=(calib||[]).sort((x,y)=>x-y);calib=null;
+    if(a.length<10){updQ();return}
+    const p=a[Math.floor(a.length*0.95)];
+    F.thr=Math.min(0.3,Math.max(0.01,Math.round(p*1.4/0.005)*0.005));
+    syncUI();saveF();
+    st('✅ دەروازە دانرا: '+(F.thr*100).toFixed(1));setTimeout(updQ,2500);
+  },3000);
+};
+syncUI();
 if(ls.get('k'))showMain();
 
 $('save').onclick=()=>{
@@ -90,6 +164,17 @@ function showMain(){$('setup').classList.add('hidden');$('main').classList.remov
 $('mic').onclick=()=>want?stop():start();
 
 function st(t){$('st').textContent=t}
+
+/* ===== کۆپیکردنی وەرگێڕانەکان ===== */
+const pairTxt=d=>'EN: '+d.firstChild.textContent.trim()+'\nKU: '+d.lastChild.textContent.trim();
+const logText=()=>[...document.querySelectorAll('#log .pair')].map(pairTxt).join('\n\n');
+async function copyTxt(t){
+  try{await navigator.clipboard.writeText(t);return true}catch(e){}
+  try{const a=document.createElement('textarea');a.value=t;a.style.cssText='position:fixed;opacity:0';document.body.appendChild(a);a.select();const ok=document.execCommand('copy');a.remove();return ok}catch(e){return false}
+}
+$('cp').onclick=async()=>{const t=logText();if(!t){st('⚠️ هێشتا وەرگێڕانێک نییە');return}st(await copyTxt(t)?'✅ کۆپی کرا — ئێستا بیلکێنە بۆ من':'❌ کۆپی نەکرا');setTimeout(updQ,2500)};
+$('clr').onclick=()=>{if(confirm('هەموو وەرگێڕانەکان بسڕدرێنەوە؟')){$('log').innerHTML='';cur=null}};
+$('log').onclick=async e=>{const d=e.target.closest('.pair');if(!d)return;st(await copyTxt(pairTxt(d))?'✅ ئەم ڕستەیە کۆپی کرا':'❌ کۆپی نەکرا');setTimeout(updQ,2000)};
 
 async function start(){
   want=true;$('mic').classList.add('on');
@@ -127,14 +212,19 @@ registerProcessor('q',Q)`;
     pnode.connect(gain);
   }catch(err){st('❌ دەنگ: '+err.message);stop();return}
   try{
-    mic=await navigator.mediaDevices.getUserMedia({audio:{echoCancellation:true,noiseSuppression:true,autoGainControl:true,channelCount:1}});
+    mic=await navigator.mediaDevices.getUserMedia({audio:{echoCancellation:true,noiseSuppression:!!F.ns,autoGainControl:!!F.agc,channelCount:1}});
     actx=new (window.AudioContext||window.webkitAudioContext)();
     const code="class P extends AudioWorkletProcessor{process(i){const c=i[0][0];if(c)this.port.postMessage(c.slice(0));return true}}registerProcessor('p',P)";
     await actx.audioWorklet.addModule(URL.createObjectURL(new Blob([code],{type:'application/javascript'})));
     const src=actx.createMediaStreamSource(mic);
     node=new AudioWorkletNode(actx,'p');
     node.port.onmessage=e=>feed(e.data);
-    src.connect(node);
+    const bq=(type,arr)=>{const b=actx.createBiquadFilter();b.type=type;b.Q.value=0.707;arr.push(b);return b};
+    hpN=[];lpN=[];
+    const h1=bq('highpass',hpN),h2=bq('highpass',hpN),l1=bq('lowpass',lpN),l2=bq('lowpass',lpN);
+    gN=actx.createGain();
+    src.connect(h1);h1.connect(h2);h2.connect(l1);l1.connect(l2);l2.connect(gN);gN.connect(node);
+    applyF();
   }catch(err){st('❌ مایکرۆفۆن: '+err.message);stop();return}
   connect();
 }
@@ -147,7 +237,7 @@ function stop(){
   try{ws&&ws.close()}catch(e){}
   flushPlayback();
   try{pctx&&pctx.close()}catch(e){}
-  node=actx=mic=ws=pctx=pnode=null;queue=[];seg=null;busy=false;live=false;pre=[];silence=0;clearTimeout(wd);acc=[];accLen=0;cur=null;
+  node=actx=mic=ws=pctx=pnode=null;hpN=[];lpN=[];gN=null;calib=null;hot=0;$('mbar').style.width='0';queue=[];seg=null;busy=false;live=false;pre=[];silence=0;clearTimeout(wd);acc=[];accLen=0;cur=null;
   st('وەستا');
 }
 
@@ -249,12 +339,16 @@ function onChunk(c){
   let e=0;for(let i=0;i<c.length;i++){const v=c[i]/32768;e+=v*v}
   const rms=Math.sqrt(e/c.length);
   if(rms<floor)floor=rms;else floor+=(rms-floor)*0.002;
-  let thr=Math.max(0.012,floor*2.5);
+  let thr=Math.max(F.thr,floor*F.mult);
   if(speaking)thr*=2;
   const sp=rms>thr,endMs=parseInt(ls.get('sg')||'600');
+  meter(rms,thr,sp);
+  if(calib){calib.push(rms);return}
+  const need=Math.max(1,Math.round(F.min/40));
   if(!seg){
-    pre.push(c);if(pre.length>5)pre.shift();
-    if(sp){seg={c:pre.slice(),sent:0};pre=[];silence=0;if(!busy&&!queue.length)goLive()}
+    pre.push(c);if(pre.length>5+need)pre.shift();
+    hot=sp?hot+1:0;
+    if(hot>=need){seg={c:pre.slice(),sent:0};pre=[];hot=0;silence=0;if(!busy&&!queue.length)goLive()}
   }else{
     seg.c.push(c);if(live)flushLive(seg);
     silence=sp?0:silence+40;
