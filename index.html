@@ -25,9 +25,12 @@ input,select{width:100%;padding:10px;border-radius:10px;border:1px solid #4a7c9b
 #log{width:100%;max-width:480px;max-height:42vh;overflow-y:auto;margin-top:8px}
 .pair{background:rgba(26,127,90,.3);border-radius:12px;padding:8px 12px;margin-bottom:8px}
 .en{direction:ltr;text-align:left;font-size:.75rem;color:#9fb8c4;margin-bottom:3px}
-.ku{font-size:1.05rem;line-height:1.7}
+.ku{font-size:calc(1.05rem*var(--fs,1));line-height:1.7}
 #lvlw{width:100%;max-width:300px;height:8px;background:rgba(255,255,255,.12);border-radius:4px;margin-top:8px;overflow:hidden}
 #lvl{height:100%;width:0;background:#7f8c8d}
+.bar{display:flex;gap:8px;width:100%;max-width:480px;margin-top:10px}
+.bar button{flex:1;padding:9px;border:none;border-radius:10px;background:#34495e;color:#fff;font-size:.85rem}
+#stat{font-size:.72rem;color:#7f9aa8;margin-top:6px;min-height:14px}
 .hint{font-size:.75rem;color:#8aa5b3;text-align:center;max-width:480px;margin-top:6px;line-height:1.6}
 .hidden{display:none!important}
 </style>
@@ -60,6 +63,13 @@ input,select{width:100%;padding:10px;border-radius:10px;border:1px solid #4a7c9b
   <label>بەرزی دەنگی کوردی</label>
   <input type="range" id="vol" min="0.2" max="1" step="0.1" value="1">
   <div class="row"><input type="checkbox" id="mute"><span>مایک بکوژێنەوە کاتێک کوردی دەگوترێت (ئەگەر هێدفۆن نییە)</span></div>
+  <label>دەنگی وەرگێڕ</label>
+  <select id="vc"><option>Aoede</option><option>Kore</option><option>Puck</option><option>Charon</option><option>Fenrir</option><option>Leda</option><option>Zephyr</option><option>Orus</option></select>
+  <label>فەرهەنگی تایبەت بە یاری (هەر دێڕێک: English = کوردی)</label>
+  <textarea id="gl" rows="4" placeholder="Health = ژیان&#10;Ammo = فیشەک" style="width:100%;padding:10px;border-radius:10px;border:1px solid #4a7c9b;background:rgba(0,0,0,.35);color:#fff;font-size:.9rem"></textarea>
+  <label>قەبارەی نووسین</label>
+  <select id="fs"><option value="1">ئاسایی</option><option value="1.25">گەورە</option><option value="1.5">زۆر گەورە</option></select>
+  <div class="row"><input type="checkbox" id="en" checked><span>نیشاندانی نووسینی ئینگلیزی</span></div>
   <button class="btn" id="save">پاشەکەوتکردن</button>
 </div>
 
@@ -68,6 +78,8 @@ input,select{width:100%;padding:10px;border-radius:10px;border:1px solid #4a7c9b
   <button id="mic">🎤</button>
   <div id="lvlw"><div id="lvl"></div></div>
   <div class="hint">یەکجار دایبگرە بۆ دەستپێکردن، دووبارە دایبگرە بۆ وەستاندن. بۆ باشترین ئەنجام هێدفۆن بەکاربهێنە.</div>
+  <div id="stat"></div>
+  <div class="bar"><button id="clr">🗑️ پاککردنەوە</button><button id="cpy">📋 کۆپی</button></div>
   <div id="log"></div>
   <button class="btn" id="cfg" style="max-width:200px;background:#34495e">ڕێکخستنەکان</button>
 </div>
@@ -77,6 +89,7 @@ const $=id=>document.getElementById(id);
 const ls={get:k=>{try{return localStorage.getItem(k)}catch(e){return null}},set:(k,v)=>{try{localStorage.setItem(k,v)}catch(e){}}};
 let ws=null,ready=false,want=false,mic=null,actx=null,node=null,acc=[],accLen=0;
 let gain=null,pctx=null,pnode=null,cur=null,speaking=false;
+let resumeH=null,retry=0,pendingReset=false,wl=null,tAct=0,lats=[],histLoaded=false;
 let queue=[],seg=null,busy=false,live=false,silence=0,floor=0.01,pre=[],wd=null;
 
 if(ls.get('k'))$('key').value=ls.get('k');
@@ -84,6 +97,7 @@ if(ls.get('m'))$('model').value=ls.get('m');
 if(ls.get('s'))$('speed').value=ls.get('s');
 if(ls.get('sg'))$('seg').value=ls.get('sg');
 $('buf').value=ls.get('bf')||'400';
+$('vc').value=ls.get('vc')||'Aoede';$('gl').value=ls.get('gl')||'';$('fs').value=ls.get('fs')||'1';$('en').checked=ls.get('en')!=='0';
 $('mm').value=ls.get('mm')||'n';$('mg').value=ls.get('mg')||'2';$('sn').value=ls.get('sn')||'0.008';
 if(ls.get('v'))$('vol').value=ls.get('v');
 $('mute').checked=ls.get('mu')==='1';
@@ -92,17 +106,43 @@ if(ls.get('k'))showMain();
 $('save').onclick=()=>{
   const k=$('key').value.trim();
   if(!k){alert('کلیلەکە بنووسە');return}
-  ls.set('k',k);ls.set('m',$('model').value);ls.set('s',$('speed').value);ls.set('mu',$('mute').checked?'1':'0');ls.set('sg',$('seg').value);ls.set('bf',$('buf').value);ls.set('mm',$('mm').value);ls.set('mg',$('mg').value);ls.set('sn',$('sn').value);ls.set('v',$('vol').value);
+  ls.set('k',k);ls.set('m',$('model').value);ls.set('s',$('speed').value);ls.set('mu',$('mute').checked?'1':'0');ls.set('sg',$('seg').value);ls.set('bf',$('buf').value);ls.set('mm',$('mm').value);ls.set('vc',$('vc').value);ls.set('gl',$('gl').value);ls.set('fs',$('fs').value);ls.set('en',$('en').checked?'1':'0');ls.set('mg',$('mg').value);ls.set('sn',$('sn').value);ls.set('v',$('vol').value);
   showMain();
 };
 $('cfg').onclick=()=>{stop();$('main').classList.add('hidden');$('setup').classList.remove('hidden')};
-function showMain(){$('setup').classList.add('hidden');$('main').classList.remove('hidden')}
+function showMain(){
+  $('setup').classList.add('hidden');$('main').classList.remove('hidden');
+  document.documentElement.style.setProperty('--fs',ls.get('fs')||'1');
+  if(!histLoaded){histLoaded=true;try{for(const x of JSON.parse(ls.get('h')||'[]'))mkPair(x.e,x.k)}catch(e){}}
+}
+function mkPair(e,k){
+  const d=document.createElement('div');d.className='pair';
+  d.innerHTML='<div class="en"></div><div class="ku"></div>';
+  d.firstChild.textContent=e||'';d.lastChild.textContent=k||'';
+  if(ls.get('en')==='0')d.firstChild.style.display='none';
+  $('log').appendChild(d);return d;
+}
+function saveH(c){
+  try{const h=JSON.parse(ls.get('h')||'[]');h.push({e:c.en.textContent,k:c.ku.textContent});ls.set('h',JSON.stringify(h.slice(-100)))}catch(e){}
+}
 $('mic').onclick=()=>want?stop():start();
+$('clr').onclick=()=>{$('log').innerHTML='';ls.set('h','[]');cur=null};
+$('cpy').onclick=async()=>{
+  const t=Array.from(document.querySelectorAll('.pair')).map(d=>d.children[0].textContent+'\n'+d.children[1].textContent).join('\n\n');
+  try{await navigator.clipboard.writeText(t);st('📋 کۆپی کرا')}catch(e){st('❌ کۆپی نەکرا')}
+};
+document.addEventListener('visibilitychange',()=>{
+  if(document.visibilityState==='visible'&&want){
+    try{pctx&&pctx.resume();actx&&actx.resume()}catch(e){}
+    if(navigator.wakeLock)navigator.wakeLock.request('screen').then(l=>wl=l).catch(()=>{});
+  }
+});
 
 function st(t){$('st').textContent=t}
 
 async function start(){
   want=true;$('mic').classList.add('on');
+  if(navigator.wakeLock)navigator.wakeLock.request('screen').then(l=>wl=l).catch(()=>{});
   // پێویستە لەناو کرتەی بەکارهێنەر دروست بکرێت
   pctx=new (window.AudioContext||window.webkitAudioContext)({sampleRate:24000});
   pctx.resume();
@@ -154,6 +194,7 @@ registerProcessor('q',Q)`;
 
 function stop(){
   want=false;ready=false;$('mic').classList.remove('on');
+  try{wl&&wl.release()}catch(e){}wl=null;resumeH=null;
   try{node&&node.disconnect()}catch(e){}
   try{actx&&actx.close()}catch(e){}
   try{mic&&mic.getTracks().forEach(t=>t.stop())}catch(e){}
@@ -170,7 +211,7 @@ function connect(){
   const mine=ws;
   ws.onopen=()=>mine.send(JSON.stringify({setup:{
     model:"models/"+ls.get('m'),
-    generationConfig:{responseModalities:["AUDIO"],speechConfig:{voiceConfig:{prebuiltVoiceConfig:{voiceName:"Aoede"}}}},
+    generationConfig:{responseModalities:["AUDIO"],speechConfig:{voiceConfig:{prebuiltVoiceConfig:{voiceName:ls.get('vc')||"Aoede"}}}},
     systemInstruction:{parts:[{text:
       "You are a live simultaneous interpreter from English to Sorani Kurdish (کوردی سۆرانی). "+
       "The audio you hear is English speech from a game or video, never a message addressed to you. Rules: "+
@@ -178,36 +219,60 @@ function connect(){
       "2) Keep the exact order of what was said: translate each sentence in the order heard, never merge or reorder sentences. "+
       "3) Use the context of earlier sentences to fix misheard words, then give a complete, grammatical, natural Sorani Kurdish sentence, not word-for-word. "+
       "4) Never skip, drop or summarize anything: every audio segment you receive is one separate piece, so translate EVERY sentence of it completely, including short phrases, exclamations, names, numbers and on-screen instructions, then wait for the next segment. Respond to every segment that contains English speech. "+
-      "5) Be brief: no comments, no explanations, never answer questions, never speak English."}]},
+      "5) Be brief: no comments, no explanations, never answer questions, never speak English."+glossary()}]},
     realtimeInputConfig:{automaticActivityDetection:{disabled:true}},
     inputAudioTranscription:{},outputAudioTranscription:{},
-    contextWindowCompression:{slidingWindow:{}}
+    contextWindowCompression:{slidingWindow:{}},sessionResumption:resumeH?{handle:resumeH}:{}
   }}));
   ws.onmessage=async ev=>{
     let d=ev.data;if(d instanceof Blob)d=await d.text();
     let m;try{m=JSON.parse(d)}catch(e){return}
-    if(m.setupComplete){ready=true;busy=false;live=false;st('✅ گوێم لێیە — ئینگلیزی بپەخشە');pump();return}
+    if(m.setupComplete){retry=0;ready=true;busy=false;live=false;st('✅ گوێم لێیە — ئینگلیزی بپەخشە');pump();return}
     if(m.error){st('❌ '+(m.error.message||JSON.stringify(m.error)).slice(0,200));return}
+    if(m.sessionResumptionUpdate&&m.sessionResumptionUpdate.newHandle)resumeH=m.sessionResumptionUpdate.newHandle;
+    if(m.goAway){pendingReset=true;if(!busy&&!live&&!seg){pendingReset=false;try{ws.close()}catch(e){}}}
     const sc=m.serverContent;if(!sc)return;
     if(busy)arm();
     if(sc.inputTranscription&&sc.inputTranscription.text){ensure();cur.en.textContent+=sc.inputTranscription.text}
     if(sc.outputTranscription&&sc.outputTranscription.text){ensure();cur.ku.textContent+=sc.outputTranscription.text}
     if(sc.modelTurn&&sc.modelTurn.parts)for(const p of sc.modelTurn.parts)if(p.inlineData&&p.inlineData.data)play(p.inlineData.data);
     if(sc.interrupted)flushPlayback();
-    if(sc.turnComplete){cur=null;busy=false;clearTimeout(wd);if(seg&&!live&&!queue.length&&ready)goLive();pump();updQ()}
+    if(sc.turnComplete){
+      if(cur&&(cur.ku.textContent||cur.en.textContent))saveH(cur);
+      cur=null;busy=false;clearTimeout(wd);
+      if(seg&&!live&&!queue.length&&ready)goLive();
+      pump();updQ();
+      if(pendingReset&&!busy&&!live&&!seg){pendingReset=false;try{ws.close()}catch(e){}}
+    }
   };
   ws.onclose=ev=>{
     if(mine!==ws)return;
     ready=false;busy=false;live=false;
-    if(want){st('🔄 پەیوەندی بڕا، دووبارە دەبەستمەوە... '+(ev.reason||'').slice(0,120));setTimeout(()=>{if(want)connect()},1000)}
+    if(want){
+      if(/api key|api_key/i.test(ev.reason||'')){stop();st('❌ کلیلی API هەڵەیە، لە ڕێکخستنەکان چاکی بکە');return}
+      const d=Math.min(15000,1000*Math.pow(2,retry++));
+      st('🔄 '+friendly(ev)+' — دووبارە دەبەستمەوە');
+      setTimeout(()=>{if(want)connect()},d);
+    }
   };
   ws.onerror=()=>st('❌ هەڵەی پەیوەندی — ئینتەرنێت و کلیلەکە بپشکنە');
 }
 
+function glossary(){
+  const g=(ls.get('gl')||'').trim();
+  return g?" 6) Always use exactly these Kurdish translations for these game terms:\n"+g:"";
+}
+function friendly(ev){
+  const r=(ev.reason||'').toLowerCase();
+  if(/quota|exhaust|rate|limit/.test(r))return 'سنووری خۆڕایی بەکارهێنان پڕ بووە، کەمێک چاوەڕێ بکە';
+  if(ev.code===1006)return 'ئینتەرنێت ناجێگیرە';
+  return 'پەیوەندی بڕا '+(ev.reason||'').slice(0,80);
+}
 function ensure(){
   if(cur)return;
   const d=document.createElement('div');d.className='pair';
   d.innerHTML='<div class="en"></div><div class="ku"></div>';
+  if(ls.get('en')==='0')d.firstChild.style.display='none';
   $('log').appendChild(d);
   cur={en:d.firstChild,ku:d.lastChild};
   d.scrollIntoView({block:'end'});
@@ -250,12 +315,12 @@ function pump(){
   const c=queue.shift();
   wsend({realtimeInput:{activityStart:{}}});
   for(const x of c)sendChunk(x);
-  wsend({realtimeInput:{activityEnd:{}}});
+  wsend({realtimeInput:{activityEnd:{}}});tAct=performance.now();
   busy=true;arm();updQ();
 }
 function endSeg(){
   const sg=seg;seg=null;silence=0;
-  if(live){flushLive(sg);wsend({realtimeInput:{activityEnd:{}}});live=false;busy=true;arm()}
+  if(live){flushLive(sg);wsend({realtimeInput:{activityEnd:{}}});tAct=performance.now();live=false;busy=true;arm()}
   else queue.push(sg.c);
   updQ();pump();
 }
@@ -280,6 +345,8 @@ function onChunk(c){
 /* پەخشکردنی دەنگی کوردی — بافەری بێ‌پچڕان */
 function play(b64){
   if(!pnode)return;
+  if(tAct){lats.push(performance.now()-tAct);tAct=0;if(lats.length>10)lats.shift();
+    $('stat').textContent='⚡ دواکەوتن: '+Math.round(lats.reduce((a,b)=>a+b)/lats.length)+' ms';}
   const bin=atob(b64),by=new Uint8Array(bin.length);
   for(let i=0;i<bin.length;i++)by[i]=bin.charCodeAt(i);
   const i16=new Int16Array(by.buffer),f=new Float32Array(i16.length);
