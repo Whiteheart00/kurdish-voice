@@ -45,6 +45,8 @@ input,select{width:100%;padding:10px;border-radius:10px;border:1px solid #4a7c9b
   </select>
   <label>خێرایی دەنگی کوردی</label>
   <select id="speed"><option value="1">ئاسایی</option><option value="1.15">خێرا</option><option value="1.3">زۆر خێرا</option></select>
+  <label>جێگیری دەنگی کوردی (دژی پچڕان)</label>
+  <select id="buf"><option value="200">کەم — خێراترین</option><option value="400">ناوەند — پێشنیارکراو</option><option value="700">زۆر — بێ پچڕانترین</option></select>
   <label>بڕینی ڕستەکان (ڕێکخستنی ڕستە)</label>
   <select id="seg"><option value="250">زۆر خێرا — ڕستەی کورت</option><option value="600">ڕێکخراو — پێشنیارکراو</option><option value="1000">وردتر — دواکەوتنی زیاتر</option></select>
   <label>بەرزی دەنگی کوردی</label>
@@ -65,12 +67,13 @@ input,select{width:100%;padding:10px;border-radius:10px;border:1px solid #4a7c9b
 const $=id=>document.getElementById(id);
 const ls={get:k=>{try{return localStorage.getItem(k)}catch(e){return null}},set:(k,v)=>{try{localStorage.setItem(k,v)}catch(e){}}};
 let ws=null,ready=false,want=false,mic=null,actx=null,node=null,acc=[],accLen=0;
-let gain=null,pctx=null,nextT=0,srcs=[],cur=null,speaking=false;
+let gain=null,pctx=null,pnode=null,cur=null,speaking=false;
 
 if(ls.get('k'))$('key').value=ls.get('k');
 if(ls.get('m'))$('model').value=ls.get('m');
 if(ls.get('s'))$('speed').value=ls.get('s');
 if(ls.get('sg'))$('seg').value=ls.get('sg');
+$('buf').value=ls.get('bf')||'400';
 if(ls.get('v'))$('vol').value=ls.get('v');
 $('mute').checked=ls.get('mu')==='1';
 if(ls.get('k'))showMain();
@@ -78,7 +81,7 @@ if(ls.get('k'))showMain();
 $('save').onclick=()=>{
   const k=$('key').value.trim();
   if(!k){alert('کلیلەکە بنووسە');return}
-  ls.set('k',k);ls.set('m',$('model').value);ls.set('s',$('speed').value);ls.set('mu',$('mute').checked?'1':'0');ls.set('sg',$('seg').value);ls.set('v',$('vol').value);
+  ls.set('k',k);ls.set('m',$('model').value);ls.set('s',$('speed').value);ls.set('mu',$('mute').checked?'1':'0');ls.set('sg',$('seg').value);ls.set('bf',$('buf').value);ls.set('v',$('vol').value);
   showMain();
 };
 $('cfg').onclick=()=>{stop();$('main').classList.add('hidden');$('setup').classList.remove('hidden')};
@@ -91,8 +94,37 @@ async function start(){
   want=true;$('mic').classList.add('on');
   // پێویستە لەناو کرتەی بەکارهێنەر دروست بکرێت
   pctx=new (window.AudioContext||window.webkitAudioContext)({sampleRate:24000});
-  pctx.resume();nextT=0;
+  pctx.resume();
   gain=pctx.createGain();gain.gain.value=parseFloat(ls.get('v')||'1');gain.connect(pctx.destination);
+  try{
+    const pc=`class Q extends AudioWorkletProcessor{
+constructor(){super();this.q=[];this.pos=0;this.avail=0;this.play=false;this.min=9600;this.rate=1;this.frac=0;this.g=0;this.idle=0;
+this.port.onmessage=e=>{const d=e.data;
+if(d.t==='a'){this.q.push(d.f);this.avail+=d.f.length;this.idle=0}
+else if(d.t==='c'){this.q=[];this.pos=0;this.avail=0;this.setP(false)}
+else if(d.t==='m'){this.min=d.v;this.rate=d.r}}}
+setP(v){if(this.play!==v){this.play=v;if(v)this.g=0;this.port.postMessage({s:v})}}
+process(i,o){const out=o[0][0];
+if(!this.play){if(this.avail>=this.min)this.setP(true);else if(this.avail>0){this.idle+=out.length;if(this.idle>7200)this.setP(true)}}
+for(let n=0;n<out.length;n++){
+if(this.play&&this.q.length){
+const a=this.q[0],x=a[this.pos];
+const y=this.pos+1<a.length?a[this.pos+1]:(this.q.length>1?this.q[1][0]:x);
+out[n]=(x+(y-x)*this.frac)*this.g;
+if(this.g<1)this.g=Math.min(1,this.g+0.004);
+this.frac+=this.rate;
+while(this.frac>=1){this.frac-=1;this.pos++;this.avail--;
+if(this.pos>=this.q[0].length){this.pos=0;this.q.shift();if(!this.q.length)break}}
+}else{out[n]=0;if(this.play&&!this.q.length){this.setP(false);this.avail=0;this.idle=0}}
+}
+return true}}
+registerProcessor('q',Q)`;
+    await pctx.audioWorklet.addModule(URL.createObjectURL(new Blob([pc],{type:'application/javascript'})));
+    pnode=new AudioWorkletNode(pctx,'q',{numberOfInputs:0,outputChannelCount:[1]});
+    pnode.port.onmessage=e=>{speaking=e.data.s};
+    pnode.port.postMessage({t:'m',v:Math.round(24*parseInt(ls.get('bf')||'400')),r:parseFloat(ls.get('s'))||1});
+    pnode.connect(gain);
+  }catch(err){st('❌ دەنگ: '+err.message);stop();return}
   try{
     mic=await navigator.mediaDevices.getUserMedia({audio:{echoCancellation:true,noiseSuppression:true,autoGainControl:true,channelCount:1}});
     actx=new (window.AudioContext||window.webkitAudioContext)();
@@ -114,7 +146,7 @@ function stop(){
   try{ws&&ws.close()}catch(e){}
   flushPlayback();
   try{pctx&&pctx.close()}catch(e){}
-  node=actx=mic=ws=pctx=null;acc=[];accLen=0;cur=null;
+  node=actx=mic=ws=pctx=pnode=null;acc=[];accLen=0;cur=null;
   st('وەستا');
 }
 
@@ -187,23 +219,18 @@ function feed(f){
   ws.send(JSON.stringify({realtimeInput:{audio:{mimeType:"audio/pcm;rate=16000",data:btoa(bin)}}}));
 }
 
-/* پەخشکردنی دەنگی کوردی */
+/* پەخشکردنی دەنگی کوردی — بافەری بێ‌پچڕان */
 function play(b64){
-  if(!pctx)return;
+  if(!pnode)return;
   const bin=atob(b64),by=new Uint8Array(bin.length);
   for(let i=0;i<bin.length;i++)by[i]=bin.charCodeAt(i);
   const i16=new Int16Array(by.buffer),f=new Float32Array(i16.length);
   for(let i=0;i<i16.length;i++)f[i]=i16[i]/32768;
-  const buf=pctx.createBuffer(1,f.length,24000);buf.getChannelData(0).set(f);
-  const s=pctx.createBufferSource(),rate=parseFloat(ls.get('s')||'1');
-  s.buffer=buf;s.playbackRate.value=rate;s.connect(gain);
-  const t=Math.max(pctx.currentTime+0.02,nextT);
-  s.start(t);nextT=t+buf.duration/rate;
-  speaking=true;srcs.push(s);
-  s.onended=()=>{srcs=srcs.filter(x=>x!==s);if(!srcs.length)speaking=false};
+  pnode.port.postMessage({t:'a',f},[f.buffer]);
 }
 function flushPlayback(){
-  srcs.forEach(s=>{try{s.stop()}catch(e){}});srcs=[];nextT=0;speaking=false;
+  try{pnode&&pnode.port.postMessage({t:'c'})}catch(e){}
+  speaking=false;
 }
 </script>
 </body>
