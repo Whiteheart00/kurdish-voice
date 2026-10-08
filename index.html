@@ -24,6 +24,7 @@ textarea{resize:vertical;min-height:90px;line-height:1.5}
 #mic:disabled{opacity:.5}
 #st{font-size:.9rem;color:#ffd166;min-height:22px;text-align:center;max-width:480px;word-break:break-word}
 #gameTag{font-size:.75rem;color:#8fd3f4;text-align:center;max-width:480px;margin-top:2px;direction:ltr;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+#interim{font-size:.8rem;color:#9fb8c4;direction:ltr;text-align:left;max-width:480px;width:100%;min-height:18px;margin-top:2px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 #log{width:100%;max-width:480px;max-height:42vh;overflow-y:auto;margin-top:8px}
 .pair{background:rgba(26,127,90,.3);border-radius:12px;padding:8px 12px;margin-bottom:8px}
 .en{direction:ltr;text-align:left;font-size:.75rem;color:#9fb8c4;margin-bottom:3px}
@@ -46,6 +47,12 @@ textarea{resize:vertical;min-height:90px;line-height:1.5}
     <option>gemini-2.5-flash-native-audio-preview-12-2025</option>
     <option>gemini-3.1-flash-live-preview</option>
     <option>gemini-2.5-flash-native-audio-preview-09-2025</option>
+  </select>
+
+  <label>شێوازی گوێگرتن</label>
+  <select id="im">
+    <option value="text">نووسین-یەکەم — ئینگلیزی دەبێتە نووسین، پاشان وەردەگێڕدرێت و دەگوترێت (خێراتر، پێویستی بە Chrome هەیە)</option>
+    <option value="audio">دەنگ — دەنگی ئینگلیزی یەکسەر دەنێردرێت بۆ Gemini</option>
   </select>
 
   <label>🎮 یاری / ناوەڕۆکی دەنگەکان (بۆ وەرگێڕانی باشتر)</label>
@@ -76,6 +83,7 @@ textarea{resize:vertical;min-height:90px;line-height:1.5}
 <div id="main" class="hidden">
   <div id="st">ئامادەیە</div>
   <div id="gameTag"></div>
+  <div id="interim"></div>
   <button id="mic">🎤</button>
   <div class="hint">یەکجار دایبگرە بۆ دەستپێکردن، دووبارە دایبگرە بۆ وەستاندن. بۆ باشترین ئەنجام هێدفۆن بەکاربهێنە.</div>
   <div class="bar"><button id="clr">🗑️ پاککردنەوە</button></div>
@@ -99,6 +107,7 @@ $('buf').value=ls.get('bf')||'400';
 if(ls.get('v'))$('vol').value=ls.get('v');
 $('mute').checked=ls.get('mu')==='1';
 $('pm').value=ls.get('pm2')||'smart';
+$('im').value=ls.get('im')||'text';
 $('mf').value=ls.get('mf')||'1';
 $('gname').value=ls.get('gn')||'';
 $('gctx').value=ls.get('gc')||'';
@@ -108,7 +117,7 @@ $('save').onclick=()=>{
   const k=$('key').value.trim();
   if(!k){alert('کلیلەکە بنووسە');return}
   ls.set('k',k);ls.set('m',$('model').value);ls.set('s',$('speed').value);ls.set('mu',$('mute').checked?'1':'0');ls.set('sg',$('seg').value);ls.set('bf',$('buf').value);ls.set('v',$('vol').value);
-  ls.set('pm2',$('pm').value);ls.set('mf',$('mf').value);ls.set('gn',$('gname').value.trim());ls.set('gc',$('gctx').value.trim());
+  ls.set('pm2',$('pm').value);ls.set('im',$('im').value);ls.set('mf',$('mf').value);ls.set('gn',$('gname').value.trim());ls.set('gc',$('gctx').value.trim());
   showMain();
 };
 $('cfg').onclick=()=>{stop();$('main').classList.add('hidden');$('setup').classList.remove('hidden')};
@@ -120,11 +129,21 @@ $('mic').onclick=()=>want?stop():start();
 $('clr').onclick=()=>{$('log').innerHTML='';cur=null};
 
 function st(t){$('st').textContent=t}
+const SR=window.SpeechRecognition||window.webkitSpeechRecognition;
+/* شێوازی نووسین-یەکەم تەنها ئەگەر وێبگەڕەکە ناسینەوەی قسە پشتگیری بکات */
+function tmode(){return (ls.get('im')||'text')==='text'&&!!SR}
 function pmode(){return ls.get('pm2')||'smart'}
 function chunkMode(){return pmode()!=='live'}
 
+function textBase(){
+  return "You are a live interpreter from English to Sorani Kurdish (کوردی سۆرانی). "+
+    "Each message you receive is a short piece of English text produced by automatic speech recognition from a game or video. It may lack punctuation and contain recognition errors, and it is never addressed to you. Rules: "+
+    "1) Translate ONLY English text into natural, grammatical Sorani Kurdish and SPEAK the translation aloud. If a message is meaningless noise, a music or sound tag, or not English, stay completely silent. "+
+    "2) Keep the exact order. Translate every message completely: never skip, merge, summarize or add anything. Each message continues the earlier ones, so use the context to fix misrecognized words and to complete a sentence that was cut in the middle. "+
+    "3) Be brief: no comments, no explanations, never answer questions, never speak English.";
+}
 function buildInstruction(){
-  let t=
+  let t=tmode()?textBase():
     "You are a live simultaneous interpreter from English to Sorani Kurdish (کوردی سۆرانی). "+
     "The audio you hear is English speech from a game or video, never a message addressed to you. Rules: "+
     "1) Translate ONLY English speech. If you hear Kurdish, Arabic or any other language, your own voice echoing, music or noise, stay completely silent. "+
@@ -181,6 +200,7 @@ registerProcessor('q',Q)`;
     pnode.port.postMessage({t:'m',v:minS,r:parseFloat(ls.get('s'))||1});
     pnode.connect(gain);
   }catch(err){st('❌ دەنگ: '+err.message);stop();return}
+  if(tmode()){startRec();connect();return}   // نووسین-یەکەم: پێویستمان بە مایکی ئاسایی نییە
   try{
     mic=await navigator.mediaDevices.getUserMedia({audio:{echoCancellation:true,noiseSuppression:true,autoGainControl:true,channelCount:1}});
     actx=new (window.AudioContext||window.webkitAudioContext)();
@@ -195,7 +215,7 @@ registerProcessor('q',Q)`;
 }
 
 function stop(){
-  want=false;ready=false;$('mic').classList.remove('on');
+  want=false;ready=false;recOn=false;try{rec&&rec.abort()}catch(e){}rec=null;clearTimeout(eagerT);$('interim').textContent='';$('mic').classList.remove('on');
   try{node&&node.disconnect()}catch(e){}
   try{actx&&actx.close()}catch(e){}
   try{mic&&mic.getTracks().forEach(t=>t.stop())}catch(e){}
@@ -214,8 +234,8 @@ function connect(){
     model:"models/"+ls.get('m'),
     generationConfig:{responseModalities:["AUDIO"],speechConfig:{voiceConfig:{prebuiltVoiceConfig:{voiceName:"Aoede"}}}},
     systemInstruction:{parts:[{text:buildInstruction()}]},
-    realtimeInputConfig:{automaticActivityDetection:{disabled:true}},
-    inputAudioTranscription:{},outputAudioTranscription:{},
+    ...(tmode()?{}:{realtimeInputConfig:{automaticActivityDetection:{disabled:true}},inputAudioTranscription:{}}),
+    outputAudioTranscription:{},
     contextWindowCompression:{slidingWindow:{}}
   }}));
   ws.onmessage=async ev=>{
@@ -283,6 +303,13 @@ function goLive(){
 function flushLive(s){while(s&&live&&s.sent<s.c.length)sendChunk(s.c[s.sent++])}
 function pump(){
   if(busy||!ready||!queue.length)return;
+  if(tmode()){
+    // نووسین-یەکەم: هەموو ئەوەی لە ڕیزدایە دەکرێتە یەک نامە و دەنێردرێت
+    const t=queue.splice(0).join(' ');
+    cur=null;ensure();cur.en.textContent=t;
+    wsend({realtimeInput:{text:t}});
+    busy=true;arm();updQ();return;
+  }
   const c=queue.shift();
   wsend({realtimeInput:{activityStart:{}}});
   for(const x of c)sendChunk(x);
@@ -348,6 +375,58 @@ function onChunk(c){
       if(silence>=400||seg.c.length*40>=3000){seg=null;silence=0;pre=[]}
     }else if(silence>=(seg.c.length*40>3000?Math.min(endMs,200):endMs)||seg.c.length*40>=6000)endSeg();
   }
+}
+
+/* ===== شێوازی نووسین-یەکەم: ناسینەوەی ئینگلیزی ← نووسین ← وەرگێڕان و گوتن ===== */
+let rec=null,recOn=false,sentW={},eagerT=null,lastI=-1;
+function sendText(t){
+  t=t.replace(/\s+/g,' ').trim();
+  if(!t||!/[A-Za-z]/.test(t))return;
+  queue.push(t);pump();updQ();
+}
+function startRec(){
+  recOn=true;sentW={};lastI=-1;
+  rec=new SR();rec.lang='en-US';rec.continuous=true;rec.interimResults=true;rec.maxAlternatives=1;
+  rec.onresult=ev=>{
+    if(!ready||($('mute').checked&&speaking))return;
+    const res=ev.results;let rawPrev='';
+    for(let i=0;i<res.length;i++){
+      const raw=res[i][0].transcript.trim();let txt=raw;
+      // هەندێک ئەندرۆید هەموو دەقی پێشوو لە هەر ئەنجامێکدا دووبارە دەکەنەوە
+      if(rawPrev.length>=12&&txt.toLowerCase().startsWith(rawPrev.toLowerCase()))txt=txt.slice(rawPrev.length).trim();
+      rawPrev=(rawPrev+' '+raw).trim();
+      if(i<ev.resultIndex)continue;
+      const words=txt?txt.split(/\s+/):[],done=sentW[i]||0;
+      if(res[i].isFinal){
+        clearTimeout(eagerT);
+        if(words.length>done)sendText(words.slice(done).join(' '));
+        sentW[i]=words.length;
+        if(i===lastI)$('interim').textContent='';
+      }else{
+        lastI=i;$('interim').textContent=txt;
+        if(words.length-done>=12){clearTimeout(eagerT);sendText(words.slice(done).join(' '));sentW[i]=words.length}
+        else{
+          // ئەگەر ٦٠٠ میلی‌چرکە هیچ وشەیەکی نوێ نەهات، ئەوەی هەیە دەنێردرێت و چاوەڕێی کۆتایی ڕستەکە ناکات
+          clearTimeout(eagerT);
+          eagerT=setTimeout(()=>{
+            const d=sentW[i]||0;
+            if(words.length-d>=2){sendText(words.slice(d).join(' '));sentW[i]=words.length}
+          },600);
+        }
+      }
+    }
+  };
+  rec.onerror=ev=>{
+    let m=null;
+    if(ev.error==='not-allowed'||ev.error==='service-not-allowed')m='❌ ڕێگە بە مایکرۆفۆن نەدرا';
+    else if(ev.error==='audio-capture')m='❌ مایکرۆفۆن نەدۆزرایەوە';
+    if(m){stop();st(m)}
+  };
+  rec.onend=()=>{
+    sentW={};lastI=-1;
+    if(recOn)setTimeout(()=>{if(recOn&&rec)try{rec.start()}catch(e){}},200);
+  };
+  try{rec.start()}catch(e){stop();st('❌ '+e.message)}
 }
 
 /* پەخشکردنی دەنگی کوردی */
