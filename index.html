@@ -79,9 +79,24 @@ const connEl = document.getElementById('connStatus');
 
 if (localStorage.getItem('gemini_key')) showApp();
 
-function saveKey() {
+async function saveKey() {
   const k = document.getElementById('apiKey').value.trim();
   if (!k) { alert('کلیلەکە بنووسە'); return; }
+  const btn = document.querySelector('#keyCard .btn');
+  btn.disabled = true; btn.textContent = 'پشکنینی کلیل...';
+  try {
+    const r = await fetch("https://generativelanguage.googleapis.com/v1beta/models?key=" + k);
+    if (!r.ok) {
+      const t = await r.text();
+      alert('کلیلەکە کاری ناکات! (' + r.status + '): ' + t.slice(0, 200));
+      btn.disabled = false; btn.textContent = 'پاشەکەوتکردنی کلیل و پەیوەندیکردن';
+      return;
+    }
+  } catch(err) {
+    alert('پەیوەندی بە گۆگڵ نەکرا: ' + err.message);
+    btn.disabled = false; btn.textContent = 'پاشەکەوتکردنی کلیل و پەیوەندیکردن';
+    return;
+  }
   localStorage.setItem('gemini_key', k);
   showApp();
 }
@@ -126,6 +141,11 @@ function connect() {
       statusEl.textContent = "دایگرە و قسە بکە 🎤";
       return;
     }
+    if (msg.error) {
+      ready = false; micBtn.disabled = true;
+      connEl.textContent = "❌ هەڵە لە سێرڤەر: " + (msg.error.message || JSON.stringify(msg.error)).slice(0, 200);
+      return;
+    }
     const sc = msg.serverContent;
     if (!sc) return;
     if (sc.modelTurn && sc.modelTurn.parts) {
@@ -141,13 +161,21 @@ function connect() {
     if (sc.turnComplete) { statusEl.textContent = "✅ ئامادەم بۆ قسەی داهاتوو"; }
   };
 
-  ws.onerror = () => { connEl.textContent = "❌ هەڵەی پەیوەندی — دوگمەکە تازە بکەرەوە"; };
-  ws.onclose = () => {
+  ws.onerror = () => { connEl.textContent = "❌ هەڵەی WebSocket لە بڕاوسەرەکە"; };
+  ws.onclose = (ev) => {
     ready = false; micBtn.disabled = true;
-    connEl.textContent = "🔌 پەیوەندی بڕا — کرتە لێرە بۆ دووبارە";
+    connEl.textContent = "🔌 پەیوەندی بڕا (کۆد: " + ev.code + " " + (ev.reason||"") + ") — کرتە لێرە بۆ دووبارە";
     connEl.style.cursor = "pointer";
     connEl.onclick = () => { connEl.onclick = null; connect(); };
   };
+  // خایەنبوونی پەیوەندی
+  setTimeout(() => {
+    if (ws && ws.readyState === WebSocket.CONNECTING) {
+      connEl.textContent = "⏱️ ١٠ چرکە خایەنبوو — ئینتەرنێت یان کلیلەکە بپشکنە، کرتە لێرە بۆ دووبارە";
+      connEl.style.cursor = "pointer";
+      connEl.onclick = () => { try{ws.close();}catch(_){}; connEl.onclick = null; connect(); };
+    }
+  }, 12000);
 }
 
 /* ===== مایکرۆفۆن ===== */
