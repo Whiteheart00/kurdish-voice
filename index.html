@@ -99,6 +99,11 @@ let gain=null,pctx=null,pnode=null,cur=null,speaking=false;
 let queue=[],seg=null,busy=false,live=false,silence=0,floor=0.01,pre=[],wd=null;
 let turnBuf=[],hist=[],vhist=[],turnLen=0,turnGo=false,minS=1;
 
+/* ★ نوێ: دەنگ و دەقی هەڵگیراو لە کاتی قسەکردنی کوردی */
+let heldBuf=[];        // دەنگی خاو (شێوازی audio)
+let heldText=[];       // دەقی ئینگلیزی (شێوازی text)
+let wasSpeaking=false; // بۆ دۆزینەوەی گۆڕانی speaking
+
 if(ls.get('k'))$('key').value=ls.get('k');
 if(ls.get('m'))$('model').value=ls.get('m');
 if(ls.get('s'))$('speed').value=ls.get('s');
@@ -194,7 +199,13 @@ return true}}
 registerProcessor('q',Q)`;
     await pctx.audioWorklet.addModule(URL.createObjectURL(new Blob([pc],{type:'application/javascript'})));
     pnode=new AudioWorkletNode(pctx,'q',{numberOfInputs:0,outputChannelCount:[1]});
-    pnode.port.onmessage=e=>{speaking=e.data.s};
+    /* ★ گۆڕدرا: کاتێک speaking دەگۆڕێت بۆ false، دەنگە هەڵگیراوەکان دەنێردرێن */
+    pnode.port.onmessage=e=>{
+      const now=e.data.s;
+      if(wasSpeaking&&!now)flushHeld();
+      speaking=now;
+      wasSpeaking=now;
+    };
     // لە شێوازی پارچە-پارچە ڕستەکە تەواو دێت، بۆیە یەکسەر پەخش دەکرێت
     minS=chunkMode()?1:Math.round(24*parseInt(ls.get('bf')||'400'));
     pnode.port.postMessage({t:'m',v:minS,r:parseFloat(ls.get('s'))||1});
@@ -223,6 +234,8 @@ function stop(){
   flushPlayback();
   try{pctx&&pctx.close()}catch(e){}
   node=actx=mic=ws=pctx=pnode=null;queue=[];seg=null;busy=false;live=false;pre=[];silence=0;clearTimeout(wd);acc=[];accLen=0;cur=null;turnBuf=[];hist=[];vhist=[];
+  /* ★ پاککردنەوەی هەڵگیراوەکان */
+  heldBuf=[];heldText=[];wasSpeaking=false;
   st('وەستا');
 }
 
@@ -268,10 +281,40 @@ function ensure(){
   d.scrollIntoView({block:'end'});
 }
 
+/* ★ فەنکشنی نوێ: ناردنی دەنگە هەڵگیراوەکان دوای تەواوبوونی قسەکردنی کوردی */
+function flushHeld(){
+  if(!heldBuf.length)return;
+  // دەنگەکان بەسەر acc دابەش دەکەین بۆ ئەوەی بەشی onChunk بەردەوام بێت
+  const held=heldBuf;heldBuf=[];
+  for(const f of held){acc.push(f);accLen+=f.length}
+  // ئێستا بەشی خوارەوەی onChunk بەکاردەهێنین بۆ پرۆسێسکردنیان
+  processAcc();
+}
+
+/* ★ فەنکشنێکی نوێ بۆ پرۆسێسکردنی acc بەبێ هەڵگرتنەوە */
+function processAcc(){
+  if(accLen===0)return;
+  const need=Math.round(actx.sampleRate*0.04);
+  if(accLen<need)return;
+  const all=new Float32Array(accLen);let o=0;for(const a of acc){all.set(a,o);o+=a.length}
+  acc=[];accLen=0;
+  const n=640,ratio=all.length/n,out=new Int16Array(n);
+  for(let i=0;i<n;i++){
+    const p=i*ratio,j=Math.floor(p),fr=p-j,a=all[j],b=all[Math.min(j+1,all.length-1)];
+    const s=Math.max(-1,Math.min(1,a+(b-a)*fr));
+    out[i]=s<0?s*32768:s*32767;
+  }
+  onChunk(out);
+}
+
 /* مایک: ناردنی پارچە بچووکەکان هەر ٤٠ میلی‌چرکە */
 function feed(f){
   if(!ready||!ws||ws.readyState!==1)return;
-  if($('mute').checked&&speaking)return;
+  /* ★ گۆڕدرا: لە جیاتی فڕێدان، دەنگ هەڵدەگیرێت */
+  if($('mute').checked&&speaking){
+    heldBuf.push(f);
+    return;
+  }
   acc.push(f);accLen+=f.length;
   const need=Math.round(actx.sampleRate*0.04);
   if(accLen<need)return;
@@ -388,7 +431,19 @@ function startRec(){
   recOn=true;sentW={};lastI=-1;
   rec=new SR();rec.lang='en-US';rec.continuous=true;rec.interimResults=true;rec.maxAlternatives=1;
   rec.onresult=ev=>{
-    if(!ready||($('mute').checked&&speaking))return;
+    if(!ready)return;
+    /* ★ گۆڕدرا: لە جیاتی فڕێدان، دەق هەڵدەگیرێت */
+    if($('mute').checked&&speaking){
+      // دەقی ئینگلیزی هەڵدەگیرێت، دوای تەواوبوونی کوردی دەنێردرێت
+      const res=ev.results;
+      for(let i=ev.resultIndex;i<res.length;i++){
+        if(res[i].isFinal){
+          const t=res[i][0].transcript.trim();
+          if(t)heldText.push(t);
+        }
+      }
+      return;
+    }
     const res=ev.results;let rawPrev='';
     for(let i=0;i<res.length;i++){
       const raw=res[i][0].transcript.trim();let txt=raw;
@@ -463,6 +518,20 @@ function flushPlayback(){
   try{pnode&&pnode.port.postMessage({t:'c'})}catch(e){}
   speaking=false;
 }
+
+/* ★ فەنکشنێکی نوێ بۆ ناردنی دەقی هەڵگیراو کاتێک کوردی تەواو دەبێت */
+function flushHeldText(){
+  if(!heldText.length)return;
+  const t=heldText.join(' ').trim();heldText=[];
+  if(t)sendText(t);
+}
+
+/* ★ بانگکردنی flushHeldText لە شوێنی گونجاودا */
+const _origFlushHeld=flushHeld;
+flushHeld=function(){
+  _origFlushHeld();
+  flushHeldText();
+};
 </script>
 </body>
 </html>
