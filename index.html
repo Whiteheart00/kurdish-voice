@@ -55,12 +55,13 @@ textarea{resize:vertical;min-height:90px;line-height:1.5}
 
   <label>شێوازی پەخشکردنی دەنگی کوردی</label>
   <select id="pm">
-    <option value="chunk">پارچە-پارچە — هەر ڕستەیەک تەواو بوو پەخش دەکرێت (بێ پچڕان، پێشنیارکراو)</option>
+    <option value="smart">زیرەک — کەمێک بافەر دەکات پاشان یەکسەر پەخش دەکات (خێرا و بێ پچڕان، پێشنیارکراو)</option>
+    <option value="chunk">پارچە-پارچە — چاوەڕێی تەواوبوونی ڕستەکە دەکات (بێ پچڕانترین، بەڵام دواکەوتووتر)</option>
     <option value="live">زیندوو — هەر کە دەنگ هات پەخش دەکرێت (خێراتر)</option>
   </select>
   <label>خێرایی دەنگی کوردی</label>
   <select id="speed"><option value="1">ئاسایی</option><option value="1.15">خێرا</option><option value="1.3">زۆر خێرا</option></select>
-  <label>جێگیری دەنگی کوردی (تەنها لە شێوازی زیندوو)</label>
+  <label>جێگیری دەنگی کوردی (بافەری پێش دەستپێکردنی پەخش — شێوازی زیرەک و زیندوو)</label>
   <select id="buf"><option value="200">کەم — خێراترین</option><option value="400">ناوەند — پێشنیارکراو</option><option value="700">زۆر — بێ پچڕانترین</option></select>
   <label>بڕینی ڕستەکان (ڕێکخستنی ڕستە)</label>
   <select id="seg"><option value="250">زۆر خێرا — ڕستەی کورت</option><option value="600">ڕێکخراو — پێشنیارکراو</option><option value="1000">وردتر — دواکەوتنی زیاتر</option></select>
@@ -88,7 +89,7 @@ const ls={get:k=>{try{return localStorage.getItem(k)}catch(e){return null}},set:
 let ws=null,ready=false,want=false,mic=null,actx=null,node=null,acc=[],accLen=0;
 let gain=null,pctx=null,pnode=null,cur=null,speaking=false;
 let queue=[],seg=null,busy=false,live=false,silence=0,floor=0.01,pre=[],wd=null;
-let turnBuf=[],hist=[],vhist=[];
+let turnBuf=[],hist=[],vhist=[],turnLen=0,turnGo=false,minS=1;
 
 if(ls.get('k'))$('key').value=ls.get('k');
 if(ls.get('m'))$('model').value=ls.get('m');
@@ -97,7 +98,7 @@ if(ls.get('sg'))$('seg').value=ls.get('sg');
 $('buf').value=ls.get('bf')||'400';
 if(ls.get('v'))$('vol').value=ls.get('v');
 $('mute').checked=ls.get('mu')==='1';
-$('pm').value=ls.get('pm')||'chunk';
+$('pm').value=ls.get('pm2')||'smart';
 $('mf').value=ls.get('mf')||'1';
 $('gname').value=ls.get('gn')||'';
 $('gctx').value=ls.get('gc')||'';
@@ -107,7 +108,7 @@ $('save').onclick=()=>{
   const k=$('key').value.trim();
   if(!k){alert('کلیلەکە بنووسە');return}
   ls.set('k',k);ls.set('m',$('model').value);ls.set('s',$('speed').value);ls.set('mu',$('mute').checked?'1':'0');ls.set('sg',$('seg').value);ls.set('bf',$('buf').value);ls.set('v',$('vol').value);
-  ls.set('pm',$('pm').value);ls.set('mf',$('mf').value);ls.set('gn',$('gname').value.trim());ls.set('gc',$('gctx').value.trim());
+  ls.set('pm2',$('pm').value);ls.set('mf',$('mf').value);ls.set('gn',$('gname').value.trim());ls.set('gc',$('gctx').value.trim());
   showMain();
 };
 $('cfg').onclick=()=>{stop();$('main').classList.add('hidden');$('setup').classList.remove('hidden')};
@@ -119,7 +120,8 @@ $('mic').onclick=()=>want?stop():start();
 $('clr').onclick=()=>{$('log').innerHTML='';cur=null};
 
 function st(t){$('st').textContent=t}
-function chunkMode(){return (ls.get('pm')||'chunk')==='chunk'}
+function pmode(){return ls.get('pm2')||'smart'}
+function chunkMode(){return pmode()!=='live'}
 
 function buildInstruction(){
   let t=
@@ -175,8 +177,8 @@ registerProcessor('q',Q)`;
     pnode=new AudioWorkletNode(pctx,'q',{numberOfInputs:0,outputChannelCount:[1]});
     pnode.port.onmessage=e=>{speaking=e.data.s};
     // لە شێوازی پارچە-پارچە ڕستەکە تەواو دێت، بۆیە یەکسەر پەخش دەکرێت
-    const minSamples=chunkMode()?1:Math.round(24*parseInt(ls.get('bf')||'400'));
-    pnode.port.postMessage({t:'m',v:minSamples,r:parseFloat(ls.get('s'))||1});
+    minS=chunkMode()?1:Math.round(24*parseInt(ls.get('bf')||'400'));
+    pnode.port.postMessage({t:'m',v:minS,r:parseFloat(ls.get('s'))||1});
     pnode.connect(gain);
   }catch(err){st('❌ دەنگ: '+err.message);stop();return}
   try{
@@ -227,11 +229,11 @@ function connect(){
     if(sc.outputTranscription&&sc.outputTranscription.text){ensure();cur.ku.textContent+=sc.outputTranscription.text}
     if(sc.modelTurn&&sc.modelTurn.parts)for(const p of sc.modelTurn.parts)if(p.inlineData&&p.inlineData.data)play(p.inlineData.data);
     if(sc.interrupted){turnBuf=[];flushPlayback()}
-    if(sc.turnComplete){flushTurn();cur=null;busy=false;clearTimeout(wd);if(seg&&seg.ok&&!live&&!queue.length&&ready)goLive();pump();updQ()}
+    if(sc.turnComplete){endTurn();cur=null;busy=false;clearTimeout(wd);if(seg&&seg.ok&&!live&&!queue.length&&ready)goLive();pump();updQ()}
   };
   ws.onclose=ev=>{
     if(mine!==ws)return;
-    ready=false;busy=false;live=false;turnBuf=[];
+    ready=false;busy=false;live=false;turnBuf=[];turnLen=0;turnGo=false;
     if(want){st('🔄 پەیوەندی بڕا، دووبارە دەبەستمەوە... '+(ev.reason||'').slice(0,120));setTimeout(()=>{if(want)connect()},1000)}
   };
   ws.onerror=()=>st('❌ هەڵەی پەیوەندی — ئینتەرنێت و کلیلەکە بپشکنە');
@@ -271,8 +273,10 @@ function sendChunk(i16){
   for(let i=0;i<by.length;i+=8192)bin+=String.fromCharCode.apply(null,by.subarray(i,i+8192));
   wsend({realtimeInput:{audio:{mimeType:"audio/pcm;rate=16000",data:btoa(bin)}}});
 }
-function arm(){clearTimeout(wd);wd=setTimeout(()=>{flushTurn();busy=false;pump();updQ()},10000)}
-function updQ(){if(want&&ready)st(queue.length?'⏳ لە ڕیزدا: '+queue.length+' ڕستە':'✅ گوێم لێیە — ئینگلیزی بپەخشە')}
+function arm(){clearTimeout(wd);wd=setTimeout(()=>{endTurn();busy=false;pump();updQ()},10000)}
+/* ئەگەر ڕستەکان کۆبوونەوە، دەنگی کوردی کەمێک خێراتر پەخش دەکرێت تا دواکەوتن زیاد نەکات */
+function setRate(){if(!pnode)return;pnode.port.postMessage({t:'m',v:minS,r:(parseFloat(ls.get('s'))||1)*(queue.length>=2?1.25:1)})}
+function updQ(){setRate();if(want&&ready)st(queue.length?'⏳ لە ڕیزدا: '+queue.length+' ڕستە':'✅ گوێم لێیە — ئینگلیزی بپەخشە')}
 function goLive(){
   wsend({realtimeInput:{activityStart:{}}});live=true;flushLive(seg);
 }
@@ -342,7 +346,7 @@ function onChunk(c){
     if(!seg.ok){
       // میوزیک یان دەنگی کورتی ناقسە: فڕێ دەدرێت و نانێردرێت و ناچێتە ڕیزەوە
       if(silence>=400||seg.c.length*40>=3000){seg=null;silence=0;pre=[]}
-    }else if(silence>=endMs||seg.c.length*40>=8000)endSeg();
+    }else if(silence>=(seg.c.length*40>3000?Math.min(endMs,200):endMs)||seg.c.length*40>=6000)endSeg();
   }
 }
 
@@ -357,11 +361,18 @@ function decode(b64){
 function play(b64){
   if(!pnode)return;
   const f=decode(b64);
-  if(chunkMode()){turnBuf.push(f);return}   // پارچەکان کۆدەکرێنەوە تا ڕستەکە تەواو دەبێت
+  if(chunkMode()&&!turnGo){
+    turnBuf.push(f);turnLen+=f.length;
+    // شێوازی زیرەک: کاتێک بڕێکی بەس دەنگ کۆبووەوە دەست بە پەخش دەکات و ئەوەی دوای ئەوە یەکسەر دەچێتە سەر
+    if(pmode()==='smart'&&turnLen>=24*parseInt(ls.get('bf')||'400')){flushTurn();turnGo=true}
+    return;
+  }   // پارچەکان کۆدەکرێنەوە تا ڕستەکە تەواو دەبێت
   pnode.port.postMessage({t:'a',f},[f.buffer]);
 }
 /* شێوازی پارچە-پارچە: هەموو دەنگی ڕستەیەک وەک یەک پارچە دەنێردرێت و دوای ئەوی پێشوو پەخش دەکرێت */
+function endTurn(){flushTurn();turnGo=false}
 function flushTurn(){
+  turnLen=0;
   if(!turnBuf.length||!pnode){turnBuf=[];return}
   let len=0;for(const a of turnBuf)len+=a.length;
   const all=new Float32Array(len);let o=0;for(const a of turnBuf){all.set(a,o);o+=a.length}
@@ -369,7 +380,7 @@ function flushTurn(){
   pnode.port.postMessage({t:'a',f:all},[all.buffer]);
 }
 function flushPlayback(){
-  turnBuf=[];
+  turnBuf=[];turnLen=0;turnGo=false;
   try{pnode&&pnode.port.postMessage({t:'c'})}catch(e){}
   speaking=false;
 }
