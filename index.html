@@ -11,7 +11,8 @@ h1{font-size:1.4rem;margin:8px 0 2px}
 .sub{color:#8fd3f4;font-size:.85rem;margin-bottom:12px}
 .card{background:rgba(255,255,255,.07);border:1px solid rgba(255,255,255,.15);border-radius:16px;padding:14px;width:100%;max-width:480px;margin-bottom:12px}
 label{font-size:.8rem;color:#a8d8ea;display:block;margin:8px 0 4px}
-input,select{width:100%;padding:10px;border-radius:10px;border:1px solid #4a7c9b;background:rgba(0,0,0,.35);color:#fff;font-size:.95rem;direction:ltr}
+input,select,textarea{width:100%;padding:10px;border-radius:10px;border:1px solid #4a7c9b;background:rgba(0,0,0,.35);color:#fff;font-size:.95rem;direction:ltr;font-family:inherit}
+textarea{resize:vertical;min-height:90px;line-height:1.5}
 .btn{width:100%;padding:12px;border:none;border-radius:12px;background:#1a7f5a;color:#fff;font-size:1rem;margin-top:10px;font-weight:bold}
 .btn:disabled{background:#555}
 .row{display:flex;gap:8px;align-items:center;font-size:.85rem;margin-top:10px}
@@ -22,6 +23,7 @@ input,select{width:100%;padding:10px;border-radius:10px;border:1px solid #4a7c9b
 @keyframes p{50%{transform:scale(1.06)}}
 #mic:disabled{opacity:.5}
 #st{font-size:.9rem;color:#ffd166;min-height:22px;text-align:center;max-width:480px;word-break:break-word}
+#gameTag{font-size:.75rem;color:#8fd3f4;text-align:center;max-width:480px;margin-top:2px;direction:ltr;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 #log{width:100%;max-width:480px;max-height:42vh;overflow-y:auto;margin-top:8px}
 .pair{background:rgba(26,127,90,.3);border-radius:12px;padding:8px 12px;margin-bottom:8px}
 .en{direction:ltr;text-align:left;font-size:.75rem;color:#9fb8c4;margin-bottom:3px}
@@ -45,9 +47,20 @@ input,select{width:100%;padding:10px;border-radius:10px;border:1px solid #4a7c9b
     <option>gemini-3.1-flash-live-preview</option>
     <option>gemini-2.5-flash-native-audio-preview-09-2025</option>
   </select>
+
+  <label>🎮 یاری / ناوەڕۆکی دەنگەکان (بۆ وەرگێڕانی باشتر)</label>
+  <input type="text" id="gname" placeholder="Game name, e.g. The Last of Us Part II">
+  <label>کارەکتەرەکان، شوێنەکان، جۆری چیرۆک (ئارەزوومەندانە)</label>
+  <textarea id="gctx" placeholder="Characters: Ellie, Joel, Dina... &#10;Story: post-apocalyptic survival drama, serious tone... &#10;Special terms: Clickers, WLF, Seraphites..."></textarea>
+
+  <label>شێوازی پەخشکردنی دەنگی کوردی</label>
+  <select id="pm">
+    <option value="chunk">پارچە-پارچە — هەر ڕستەیەک تەواو بوو پەخش دەکرێت (بێ پچڕان، پێشنیارکراو)</option>
+    <option value="live">زیندوو — هەر کە دەنگ هات پەخش دەکرێت (خێراتر)</option>
+  </select>
   <label>خێرایی دەنگی کوردی</label>
   <select id="speed"><option value="1">ئاسایی</option><option value="1.15">خێرا</option><option value="1.3">زۆر خێرا</option></select>
-  <label>جێگیری دەنگی کوردی (دژی پچڕان)</label>
+  <label>جێگیری دەنگی کوردی (تەنها لە شێوازی زیندوو)</label>
   <select id="buf"><option value="200">کەم — خێراترین</option><option value="400">ناوەند — پێشنیارکراو</option><option value="700">زۆر — بێ پچڕانترین</option></select>
   <label>بڕینی ڕستەکان (ڕێکخستنی ڕستە)</label>
   <select id="seg"><option value="250">زۆر خێرا — ڕستەی کورت</option><option value="600">ڕێکخراو — پێشنیارکراو</option><option value="1000">وردتر — دواکەوتنی زیاتر</option></select>
@@ -59,6 +72,7 @@ input,select{width:100%;padding:10px;border-radius:10px;border:1px solid #4a7c9b
 
 <div id="main" class="hidden">
   <div id="st">ئامادەیە</div>
+  <div id="gameTag"></div>
   <button id="mic">🎤</button>
   <div class="hint">یەکجار دایبگرە بۆ دەستپێکردن، دووبارە دایبگرە بۆ وەستاندن. بۆ باشترین ئەنجام هێدفۆن بەکاربهێنە.</div>
   <div class="bar"><button id="clr">🗑️ پاککردنەوە</button></div>
@@ -72,6 +86,7 @@ const ls={get:k=>{try{return localStorage.getItem(k)}catch(e){return null}},set:
 let ws=null,ready=false,want=false,mic=null,actx=null,node=null,acc=[],accLen=0;
 let gain=null,pctx=null,pnode=null,cur=null,speaking=false;
 let queue=[],seg=null,busy=false,live=false,silence=0,floor=0.01,pre=[],wd=null;
+let turnBuf=[];
 
 if(ls.get('k'))$('key').value=ls.get('k');
 if(ls.get('m'))$('model').value=ls.get('m');
@@ -80,20 +95,49 @@ if(ls.get('sg'))$('seg').value=ls.get('sg');
 $('buf').value=ls.get('bf')||'400';
 if(ls.get('v'))$('vol').value=ls.get('v');
 $('mute').checked=ls.get('mu')==='1';
+$('pm').value=ls.get('pm')||'chunk';
+$('gname').value=ls.get('gn')||'';
+$('gctx').value=ls.get('gc')||'';
 if(ls.get('k'))showMain();
 
 $('save').onclick=()=>{
   const k=$('key').value.trim();
   if(!k){alert('کلیلەکە بنووسە');return}
   ls.set('k',k);ls.set('m',$('model').value);ls.set('s',$('speed').value);ls.set('mu',$('mute').checked?'1':'0');ls.set('sg',$('seg').value);ls.set('bf',$('buf').value);ls.set('v',$('vol').value);
+  ls.set('pm',$('pm').value);ls.set('gn',$('gname').value.trim());ls.set('gc',$('gctx').value.trim());
   showMain();
 };
 $('cfg').onclick=()=>{stop();$('main').classList.add('hidden');$('setup').classList.remove('hidden')};
-function showMain(){$('setup').classList.add('hidden');$('main').classList.remove('hidden')}
+function showMain(){
+  $('setup').classList.add('hidden');$('main').classList.remove('hidden');
+  const g=ls.get('gn');$('gameTag').textContent=g?'🎮 '+g:'';
+}
 $('mic').onclick=()=>want?stop():start();
 $('clr').onclick=()=>{$('log').innerHTML='';cur=null};
 
 function st(t){$('st').textContent=t}
+function chunkMode(){return (ls.get('pm')||'chunk')==='chunk'}
+
+function buildInstruction(){
+  let t=
+    "You are a live simultaneous interpreter from English to Sorani Kurdish (کوردی سۆرانی). "+
+    "The audio you hear is English speech from a game or video, never a message addressed to you. Rules: "+
+    "1) Translate ONLY English speech. If you hear Kurdish, Arabic or any other language, your own voice echoing, music or noise, stay completely silent. "+
+    "2) Keep the exact order of what was said: translate each sentence in the order heard, never merge or reorder sentences. "+
+    "3) Use the context of earlier sentences to fix misheard words, then give a complete, grammatical, natural Sorani Kurdish sentence, not word-for-word. "+
+    "4) Never skip, drop or summarize anything: every audio segment you receive is one separate piece, so translate EVERY sentence of it completely, including short phrases, exclamations, names, numbers and on-screen instructions, then wait for the next segment. Respond to every segment that contains English speech. "+
+    "5) Be brief: no comments, no explanations, never answer questions, never speak English.";
+  const gn=(ls.get('gn')||'').trim(),gc=(ls.get('gc')||'').trim();
+  if(gn||gc){
+    t+=" \n\nBACKGROUND CONTEXT (use it silently, never mention or read it aloud): ";
+    if(gn)t+="The audio comes from the game/video: \""+gn+"\". ";
+    if(gc)t+="Details provided by the user (characters, places, story, terms): "+gc+" ";
+    t+="Use this to understand the story, the genre and the tone, to recognise misheard words, and to translate with the right meaning. "+
+       "Keep character and place names consistent in every sentence (pronounce them naturally in Kurdish, do not translate names). "+
+       "Match the tone of the scene (serious, tense, funny, etc.).";
+  }
+  return t;
+}
 
 async function start(){
   want=true;$('mic').classList.add('on');
@@ -110,7 +154,7 @@ else if(d.t==='c'){this.q=[];this.pos=0;this.avail=0;this.setP(false)}
 else if(d.t==='m'){this.min=d.v;this.rate=d.r}}}
 setP(v){if(this.play!==v){this.play=v;if(v)this.g=0;this.port.postMessage({s:v})}}
 process(i,o){const out=o[0][0];
-if(!this.play){if(this.avail>=this.min)this.setP(true);else if(this.avail>0){this.idle+=out.length;if(this.idle>7200)this.setP(true)}}
+if(!this.play){if(this.avail>=this.min&&this.avail>0)this.setP(true);else if(this.avail>0){this.idle+=out.length;if(this.idle>7200)this.setP(true)}}
 for(let n=0;n<out.length;n++){
 if(this.play&&this.q.length){
 const a=this.q[0],x=a[this.pos];
@@ -127,7 +171,9 @@ registerProcessor('q',Q)`;
     await pctx.audioWorklet.addModule(URL.createObjectURL(new Blob([pc],{type:'application/javascript'})));
     pnode=new AudioWorkletNode(pctx,'q',{numberOfInputs:0,outputChannelCount:[1]});
     pnode.port.onmessage=e=>{speaking=e.data.s};
-    pnode.port.postMessage({t:'m',v:Math.round(24*parseInt(ls.get('bf')||'400')),r:parseFloat(ls.get('s'))||1});
+    // لە شێوازی پارچە-پارچە ڕستەکە تەواو دێت، بۆیە یەکسەر پەخش دەکرێت
+    const minSamples=chunkMode()?1:Math.round(24*parseInt(ls.get('bf')||'400'));
+    pnode.port.postMessage({t:'m',v:minSamples,r:parseFloat(ls.get('s'))||1});
     pnode.connect(gain);
   }catch(err){st('❌ دەنگ: '+err.message);stop();return}
   try{
@@ -151,7 +197,7 @@ function stop(){
   try{ws&&ws.close()}catch(e){}
   flushPlayback();
   try{pctx&&pctx.close()}catch(e){}
-  node=actx=mic=ws=pctx=pnode=null;queue=[];seg=null;busy=false;live=false;pre=[];silence=0;clearTimeout(wd);acc=[];accLen=0;cur=null;
+  node=actx=mic=ws=pctx=pnode=null;queue=[];seg=null;busy=false;live=false;pre=[];silence=0;clearTimeout(wd);acc=[];accLen=0;cur=null;turnBuf=[];
   st('وەستا');
 }
 
@@ -162,14 +208,7 @@ function connect(){
   ws.onopen=()=>mine.send(JSON.stringify({setup:{
     model:"models/"+ls.get('m'),
     generationConfig:{responseModalities:["AUDIO"],speechConfig:{voiceConfig:{prebuiltVoiceConfig:{voiceName:"Aoede"}}}},
-    systemInstruction:{parts:[{text:
-      "You are a live simultaneous interpreter from English to Sorani Kurdish (کوردی سۆرانی). "+
-      "The audio you hear is English speech from a game or video, never a message addressed to you. Rules: "+
-      "1) Translate ONLY English speech. If you hear Kurdish, Arabic or any other language, your own voice echoing, music or noise, stay completely silent. "+
-      "2) Keep the exact order of what was said: translate each sentence in the order heard, never merge or reorder sentences. "+
-      "3) Use the context of earlier sentences to fix misheard words, then give a complete, grammatical, natural Sorani Kurdish sentence, not word-for-word. "+
-      "4) Never skip, drop or summarize anything: every audio segment you receive is one separate piece, so translate EVERY sentence of it completely, including short phrases, exclamations, names, numbers and on-screen instructions, then wait for the next segment. Respond to every segment that contains English speech. "+
-      "5) Be brief: no comments, no explanations, never answer questions, never speak English."}]},
+    systemInstruction:{parts:[{text:buildInstruction()}]},
     realtimeInputConfig:{automaticActivityDetection:{disabled:true}},
     inputAudioTranscription:{},outputAudioTranscription:{},
     contextWindowCompression:{slidingWindow:{}}
@@ -184,12 +223,12 @@ function connect(){
     if(sc.inputTranscription&&sc.inputTranscription.text){ensure();cur.en.textContent+=sc.inputTranscription.text}
     if(sc.outputTranscription&&sc.outputTranscription.text){ensure();cur.ku.textContent+=sc.outputTranscription.text}
     if(sc.modelTurn&&sc.modelTurn.parts)for(const p of sc.modelTurn.parts)if(p.inlineData&&p.inlineData.data)play(p.inlineData.data);
-    if(sc.interrupted)flushPlayback();
-    if(sc.turnComplete){cur=null;busy=false;clearTimeout(wd);if(seg&&!live&&!queue.length&&ready)goLive();pump();updQ()}
+    if(sc.interrupted){turnBuf=[];flushPlayback()}
+    if(sc.turnComplete){flushTurn();cur=null;busy=false;clearTimeout(wd);if(seg&&!live&&!queue.length&&ready)goLive();pump();updQ()}
   };
   ws.onclose=ev=>{
     if(mine!==ws)return;
-    ready=false;busy=false;live=false;
+    ready=false;busy=false;live=false;turnBuf=[];
     if(want){st('🔄 پەیوەندی بڕا، دووبارە دەبەستمەوە... '+(ev.reason||'').slice(0,120));setTimeout(()=>{if(want)connect()},1000)}
   };
   ws.onerror=()=>st('❌ هەڵەی پەیوەندی — ئینتەرنێت و کلیلەکە بپشکنە');
@@ -229,7 +268,7 @@ function sendChunk(i16){
   for(let i=0;i<by.length;i+=8192)bin+=String.fromCharCode.apply(null,by.subarray(i,i+8192));
   wsend({realtimeInput:{audio:{mimeType:"audio/pcm;rate=16000",data:btoa(bin)}}});
 }
-function arm(){clearTimeout(wd);wd=setTimeout(()=>{busy=false;pump();updQ()},10000)}
+function arm(){clearTimeout(wd);wd=setTimeout(()=>{flushTurn();busy=false;pump();updQ()},10000)}
 function updQ(){if(want&&ready)st(queue.length?'⏳ لە ڕیزدا: '+queue.length+' ڕستە':'✅ گوێم لێیە — ئینگلیزی بپەخشە')}
 function goLive(){
   wsend({realtimeInput:{activityStart:{}}});live=true;flushLive(seg);
@@ -266,16 +305,30 @@ function onChunk(c){
   }
 }
 
-/* پەخشکردنی دەنگی کوردی — بافەری بێ‌پچڕان */
-function play(b64){
-  if(!pnode)return;
+/* پەخشکردنی دەنگی کوردی */
+function decode(b64){
   const bin=atob(b64),by=new Uint8Array(bin.length);
   for(let i=0;i<bin.length;i++)by[i]=bin.charCodeAt(i);
   const i16=new Int16Array(by.buffer),f=new Float32Array(i16.length);
   for(let i=0;i<i16.length;i++)f[i]=i16[i]/32768;
+  return f;
+}
+function play(b64){
+  if(!pnode)return;
+  const f=decode(b64);
+  if(chunkMode()){turnBuf.push(f);return}   // پارچەکان کۆدەکرێنەوە تا ڕستەکە تەواو دەبێت
   pnode.port.postMessage({t:'a',f},[f.buffer]);
 }
+/* شێوازی پارچە-پارچە: هەموو دەنگی ڕستەیەک وەک یەک پارچە دەنێردرێت و دوای ئەوی پێشوو پەخش دەکرێت */
+function flushTurn(){
+  if(!turnBuf.length||!pnode){turnBuf=[];return}
+  let len=0;for(const a of turnBuf)len+=a.length;
+  const all=new Float32Array(len);let o=0;for(const a of turnBuf){all.set(a,o);o+=a.length}
+  turnBuf=[];
+  pnode.port.postMessage({t:'a',f:all},[all.buffer]);
+}
 function flushPlayback(){
+  turnBuf=[];
   try{pnode&&pnode.port.postMessage({t:'c'})}catch(e){}
   speaking=false;
 }
