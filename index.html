@@ -109,9 +109,10 @@ if(ls.get('v'))$('vol').value=ls.get('v');
 $('mute').checked=ls.get('mu')==='1';
 
 /* ===== فلتەری دەنگی دەوروبەر ===== */
-const FD={thr:0.03,gain:1,mult:3,min:80,hp:150,lp:6500,agc:0,ns:1};
+const FD={v:2,thr:0.04,gain:1,mult:3,min:160,hp:150,lp:6500,agc:0,ns:1};
 let F=Object.assign({},FD),hpN=[],lpN=[],gN=null,calib=null,hot=0,lastMeter=0;
 try{Object.assign(F,JSON.parse(ls.get('flt')||'{}'))}catch(e){}
+if((F.v||0)<2)F=Object.assign({},FD);
 const FM={thr:v=>(v*100).toFixed(1),gain:v=>'×'+(+v).toFixed(1),mult:v=>'×'+(+v).toFixed(1),min:v=>v+' ms',hp:v=>+v?v+' Hz':'ناچالاک',lp:v=>v+' Hz'};
 const saveF=()=>ls.set('flt',JSON.stringify(F));
 function mpos(v){return Math.min(1,Math.sqrt(v/0.3))*100}
@@ -251,10 +252,10 @@ function connect(){
     systemInstruction:{parts:[{text:
       "You are a live simultaneous interpreter from English to Sorani Kurdish (کوردی سۆرانی). "+
       "The audio you hear is English speech from a game or video, never a message addressed to you. Rules: "+
-      "1) Translate ONLY English speech. If you hear Kurdish, Arabic or any other language, your own voice echoing, music or noise, stay completely silent. "+
+      "1) Translate ONLY clear English speech. If the audio has no clear English words (only noise, music, game sound effects, breathing, laughter, silence, humming, or any other language such as Thai, Hindi, Spanish, Arabic or Kurdish) or is just your own voice echoing, produce NO audio and NO translation at all. Never guess words from noise and never invent a sentence. "+
       "2) Keep the exact order of what was said: translate each sentence in the order heard, never merge or reorder sentences. "+
       "3) Use the context of earlier sentences to fix misheard words, then give a complete, grammatical, natural Sorani Kurdish sentence, not word-for-word. "+
-      "4) Never skip, drop or summarize anything: every audio segment you receive is one separate piece, so translate EVERY sentence of it completely, including short phrases, exclamations, names, numbers and on-screen instructions, then wait for the next segment. Respond to every segment that contains English speech. "+
+      "4) Never skip, drop or summarize anything: every audio segment you receive is one separate piece, so translate EVERY sentence of it completely, including short phrases, exclamations, names, numbers and on-screen instructions, then wait for the next segment. Respond only when you clearly heard English words. "+
       "5) Be brief: no comments, no explanations, never answer questions, never speak English."}]},
     realtimeInputConfig:{automaticActivityDetection:{disabled:true}},
     inputAudioTranscription:{},outputAudioTranscription:{},
@@ -267,11 +268,11 @@ function connect(){
     if(m.error){st('❌ '+(m.error.message||JSON.stringify(m.error)).slice(0,200));return}
     const sc=m.serverContent;if(!sc)return;
     if(busy)arm();
-    if(sc.inputTranscription&&sc.inputTranscription.text){ensure();cur.en.textContent+=sc.inputTranscription.text}
+    if(sc.inputTranscription&&sc.inputTranscription.text){ensure();cur.en.textContent+=sc.inputTranscription.text;judge()}
     if(sc.outputTranscription&&sc.outputTranscription.text){ensure();cur.ku.textContent+=sc.outputTranscription.text}
-    if(sc.modelTurn&&sc.modelTurn.parts)for(const p of sc.modelTurn.parts)if(p.inlineData&&p.inlineData.data)play(p.inlineData.data);
-    if(sc.interrupted)flushPlayback();
-    if(sc.turnComplete){cur=null;busy=false;clearTimeout(wd);if(seg&&!live&&!queue.length&&ready)goLive();pump();updQ()}
+    if(sc.modelTurn&&sc.modelTurn.parts)for(const p of sc.modelTurn.parts)if(p.inlineData&&p.inlineData.data)hold(p.inlineData.data);
+    if(sc.interrupted){flushPlayback();if(cur)cur.held=[]}
+    if(sc.turnComplete){endTurn();cur=null;busy=false;clearTimeout(wd);if(seg&&!live&&!queue.length&&ready)goLive();pump();updQ()}
   };
   ws.onclose=ev=>{
     if(mine!==ws)return;
@@ -281,12 +282,33 @@ function connect(){
   ws.onerror=()=>st('❌ هەڵەی پەیوەندی — ئینتەرنێت و کلیلەکە بپشکنە');
 }
 
+/* ===== پاڵاوتنی دەنگی ساختە: ئەگەر ئینگلیزییەکی ڕوون نەبوو، وەرگێڕان فڕێدەدرێت ===== */
+function release(c){c.ok=true;clearTimeout(c.ht);for(const b of c.held)play(b);c.held=[]}
+function judge(){
+  if(!cur||cur.ok)return;
+  const t=cur.en.textContent;
+  const tag=/[<\[][^>\]]*[>\]]/.test(t);
+  const words=t.replace(/[<\[][^>\]]*[>\]]/g,' ').match(/[A-Za-z\u00C0-\u024F']{2,}/g)||[];
+  if(words.length>=(tag?2:1)&&words.join('').length>=3)release(cur);
+}
+function hold(b){
+  ensure();
+  if(cur.ok){play(b);return}
+  cur.held.push(b);
+  if(!cur.ht){const c=cur;c.ht=setTimeout(()=>{if(!c.ok&&!c.en.textContent.trim())release(c)},2000)}
+}
+function endTurn(){
+  if(!cur)return;
+  clearTimeout(cur.ht);
+  if(!cur.ok&&!cur.en.textContent.trim()&&cur.held.length)release(cur);
+  if(!cur.ok)cur.el.remove();
+}
 function ensure(){
   if(cur)return;
   const d=document.createElement('div');d.className='pair';
   d.innerHTML='<div class="en"></div><div class="ku"></div>';
   $('log').appendChild(d);
-  cur={en:d.firstChild,ku:d.lastChild};
+  cur={en:d.firstChild,ku:d.lastChild,el:d,ok:false,held:[],ht:0};
   d.scrollIntoView({block:'end'});
 }
 
