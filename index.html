@@ -7,70 +7,134 @@
 <style>
 *{margin:0;padding:0;box-sizing:border-box;-webkit-tap-highlight-color:transparent}
 body{font-family:'Noto Sans Arabic',Tahoma,Arial,sans-serif;background:linear-gradient(135deg,#0f2027,#203a43,#2c5364);min-height:100vh;color:#fff;display:flex;flex-direction:column;align-items:center;padding:16px}
-h1{font-size:1.4rem;margin:8px 0 12px}
+h1{font-size:1.4rem;margin:8px 0 2px}
+.sub{color:#8fd3f4;font-size:.85rem;margin-bottom:12px}
 .card{background:rgba(255,255,255,.07);border:1px solid rgba(255,255,255,.15);border-radius:16px;padding:14px;width:100%;max-width:480px;margin-bottom:12px}
 label{font-size:.8rem;color:#a8d8ea;display:block;margin:8px 0 4px}
 input,select{width:100%;padding:10px;border-radius:10px;border:1px solid #4a7c9b;background:rgba(0,0,0,.35);color:#fff;font-size:.95rem;direction:ltr}
 .btn{width:100%;padding:12px;border:none;border-radius:12px;background:#1a7f5a;color:#fff;font-size:1rem;margin-top:10px;font-weight:bold}
-#mic{width:130px;height:130px;border-radius:50%;border:none;font-size:2.8rem;background:radial-gradient(circle at 30% 30%,#ff6b6b,#c0392b);margin:12px 0 6px;color:#fff}
-#mic.on{background:radial-gradient(circle at 30% 30%,#2ecc71,#1a7f5a);animation:p 1.6s infinite}
+.btn:disabled{background:#555}
+.row{display:flex;gap:8px;align-items:center;font-size:.85rem;margin-top:10px}
+.row input{width:auto}
+#main{width:100%;display:flex;flex-direction:column;align-items:center}
+#mic{width:130px;height:130px;border-radius:50%;border:none;font-size:2.8rem;background:radial-gradient(circle at 30% 30%,#ff6b6b,#c0392b);box-shadow:0 8px 24px rgba(192,57,43,.5);margin:12px 0 6px;color:#fff}
+#mic.on{background:radial-gradient(circle at 30% 30%,#2ecc71,#1a7f5a);box-shadow:0 8px 24px rgba(46,204,113,.5);animation:p 1.6s infinite}
 @keyframes p{50%{transform:scale(1.06)}}
-#st{font-size:.9rem;color:#ffd166;min-height:22px;text-align:center}
-#txt{width:100%;max-width:480px;font-size:1.1rem;line-height:1.8;margin-top:10px;max-height:40vh;overflow-y:auto}
+#mic:disabled{opacity:.5}
+#st{font-size:.9rem;color:#ffd166;min-height:22px;text-align:center;max-width:480px;word-break:break-word}
+#log{width:100%;max-width:480px;max-height:42vh;overflow-y:auto;margin-top:8px}
+.pair{background:rgba(26,127,90,.3);border-radius:12px;padding:8px 12px;margin-bottom:8px}
+.en{direction:ltr;text-align:left;font-size:.75rem;color:#9fb8c4;margin-bottom:3px}
+.ku{font-size:1.05rem;line-height:1.7}
+.hint{font-size:.75rem;color:#8aa5b3;text-align:center;max-width:480px;margin-top:6px;line-height:1.6}
 .hidden{display:none!important}
 </style>
 </head>
 <body>
 <h1>🎙️ وەرگێڕی دەنگی کوردی</h1>
+<div class="sub">ئینگلیزی دەبیسترێت، یەکسەر بە کوردی دەگوترێتەوە</div>
 
 <div class="card" id="setup">
-  <label>کلیلی Gemini</label>
+  <label>کلیلی Gemini (خۆڕایە لە aistudio.google.com)</label>
   <input type="password" id="key" placeholder="API Key" autocomplete="off">
   <label>مۆدێل</label>
   <select id="model">
-    <option>gemini-3.5-live-translate-preview</option>
+    <option>gemini-2.5-flash-native-audio-preview-12-2025</option>
+    <option>gemini-3.1-flash-live-preview</option>
+    <option>gemini-2.5-flash-native-audio-preview-09-2025</option>
   </select>
+  <label>خێرایی دەنگی کوردی</label>
+  <select id="speed"><option value="1">ئاسایی</option><option value="1.15">خێرا</option><option value="1.3">زۆر خێرا</option></select>
+  <label>جێگیری دەنگی کوردی (دژی پچڕان)</label>
+  <select id="buf"><option value="200">کەم — خێراترین</option><option value="400">ناوەند — پێشنیارکراو</option><option value="700">زۆر — بێ پچڕانترین</option></select>
+  <label>بڕینی ڕستەکان (ڕێکخستنی ڕستە)</label>
+  <select id="seg"><option value="250">زۆر خێرا — ڕستەی کورت</option><option value="600">ڕێکخراو — پێشنیارکراو</option><option value="1000">وردتر — دواکەوتنی زیاتر</option></select>
+  <label>بەرزی دەنگی کوردی</label>
+  <input type="range" id="vol" min="0.2" max="1" step="0.1" value="1">
+  <div class="row"><input type="checkbox" id="mute"><span>مایک بکوژێنەوە کاتێک کوردی دەگوترێت (ئەگەر هێدفۆن نییە)</span></div>
   <button class="btn" id="save">پاشەکەوتکردن</button>
 </div>
 
-<div id="main" class="hidden" style="width:100%;display:flex;flex-direction:column;align-items:center">
+<div id="main" class="hidden">
   <div id="st">ئامادەیە</div>
   <button id="mic">🎤</button>
-  <div id="txt"></div>
+  <div class="hint">یەکجار دایبگرە بۆ دەستپێکردن، دووبارە دایبگرە بۆ وەستاندن. بۆ باشترین ئەنجام هێدفۆن بەکاربهێنە.</div>
+  <div id="log"></div>
   <button class="btn" id="cfg" style="max-width:200px;background:#34495e">ڕێکخستنەکان</button>
 </div>
 
 <script>
 const $=id=>document.getElementById(id);
 const ls={get:k=>{try{return localStorage.getItem(k)}catch(e){return null}},set:(k,v)=>{try{localStorage.setItem(k,v)}catch(e){}}};
-let ws=null,ready=false,want=false,mic=null,actx=null,pctx=null,node=null,acc=[],accLen=0,nextT=0,retry=0;
+let ws=null,ready=false,want=false,mic=null,actx=null,node=null,acc=[],accLen=0;
+let gain=null,pctx=null,pnode=null,cur=null,speaking=false;
+let queue=[],seg=null,busy=false,live=false,silence=0,floor=0.01,pre=[],wd=null;
 
 if(ls.get('k'))$('key').value=ls.get('k');
 if(ls.get('m'))$('model').value=ls.get('m');
-if(ls.get('k'))show();
+if(ls.get('s'))$('speed').value=ls.get('s');
+if(ls.get('sg'))$('seg').value=ls.get('sg');
+$('buf').value=ls.get('bf')||'400';
+if(ls.get('v'))$('vol').value=ls.get('v');
+$('mute').checked=ls.get('mu')==='1';
+if(ls.get('k'))showMain();
 
 $('save').onclick=()=>{
   const k=$('key').value.trim();
-  if(!k)return alert('کلیلەکە بنووسە');
-  ls.set('k',k);ls.set('m',$('model').value);show();
+  if(!k){alert('کلیلەکە بنووسە');return}
+  ls.set('k',k);ls.set('m',$('model').value);ls.set('s',$('speed').value);ls.set('mu',$('mute').checked?'1':'0');ls.set('sg',$('seg').value);ls.set('bf',$('buf').value);ls.set('v',$('vol').value);
+  showMain();
 };
 $('cfg').onclick=()=>{stop();$('main').classList.add('hidden');$('setup').classList.remove('hidden')};
+function showMain(){$('setup').classList.add('hidden');$('main').classList.remove('hidden')}
 $('mic').onclick=()=>want?stop():start();
-function show(){$('setup').classList.add('hidden');$('main').classList.remove('hidden')}
+
 function st(t){$('st').textContent=t}
 
 async function start(){
   want=true;$('mic').classList.add('on');
+  // پێویستە لەناو کرتەی بەکارهێنەر دروست بکرێت
   pctx=new (window.AudioContext||window.webkitAudioContext)({sampleRate:24000});
-  pctx.resume();nextT=0;
+  pctx.resume();
+  gain=pctx.createGain();gain.gain.value=parseFloat(ls.get('v')||'1');gain.connect(pctx.destination);
   try{
-    mic=await navigator.mediaDevices.getUserMedia({audio:{echoCancellation:true,noiseSuppression:false,autoGainControl:true,channelCount:1}});
-    actx=new (window.AudioContext||window.webkitAudioContext)({sampleRate:16000});
+    const pc=`class Q extends AudioWorkletProcessor{
+constructor(){super();this.q=[];this.pos=0;this.avail=0;this.play=false;this.min=9600;this.rate=1;this.frac=0;this.g=0;this.idle=0;
+this.port.onmessage=e=>{const d=e.data;
+if(d.t==='a'){this.q.push(d.f);this.avail+=d.f.length;this.idle=0}
+else if(d.t==='c'){this.q=[];this.pos=0;this.avail=0;this.setP(false)}
+else if(d.t==='m'){this.min=d.v;this.rate=d.r}}}
+setP(v){if(this.play!==v){this.play=v;if(v)this.g=0;this.port.postMessage({s:v})}}
+process(i,o){const out=o[0][0];
+if(!this.play){if(this.avail>=this.min)this.setP(true);else if(this.avail>0){this.idle+=out.length;if(this.idle>7200)this.setP(true)}}
+for(let n=0;n<out.length;n++){
+if(this.play&&this.q.length){
+const a=this.q[0],x=a[this.pos];
+const y=this.pos+1<a.length?a[this.pos+1]:(this.q.length>1?this.q[1][0]:x);
+out[n]=(x+(y-x)*this.frac)*this.g;
+if(this.g<1)this.g=Math.min(1,this.g+0.004);
+this.frac+=this.rate;
+while(this.frac>=1){this.frac-=1;this.pos++;this.avail--;
+if(this.pos>=this.q[0].length){this.pos=0;this.q.shift();if(!this.q.length)break}}
+}else{out[n]=0;if(this.play&&!this.q.length){this.setP(false);this.avail=0;this.idle=0}}
+}
+return true}}
+registerProcessor('q',Q)`;
+    await pctx.audioWorklet.addModule(URL.createObjectURL(new Blob([pc],{type:'application/javascript'})));
+    pnode=new AudioWorkletNode(pctx,'q',{numberOfInputs:0,outputChannelCount:[1]});
+    pnode.port.onmessage=e=>{speaking=e.data.s};
+    pnode.port.postMessage({t:'m',v:Math.round(24*parseInt(ls.get('bf')||'400')),r:parseFloat(ls.get('s'))||1});
+    pnode.connect(gain);
+  }catch(err){st('❌ دەنگ: '+err.message);stop();return}
+  try{
+    mic=await navigator.mediaDevices.getUserMedia({audio:{echoCancellation:true,noiseSuppression:true,autoGainControl:true,channelCount:1}});
+    actx=new (window.AudioContext||window.webkitAudioContext)();
     const code="class P extends AudioWorkletProcessor{process(i){const c=i[0][0];if(c)this.port.postMessage(c.slice(0));return true}}registerProcessor('p',P)";
     await actx.audioWorklet.addModule(URL.createObjectURL(new Blob([code],{type:'application/javascript'})));
+    const src=actx.createMediaStreamSource(mic);
     node=new AudioWorkletNode(actx,'p');
     node.port.onmessage=e=>feed(e.data);
-    actx.createMediaStreamSource(mic).connect(node);
+    src.connect(node);
   }catch(err){st('❌ مایکرۆفۆن: '+err.message);stop();return}
   connect();
 }
@@ -81,8 +145,10 @@ function stop(){
   try{actx&&actx.close()}catch(e){}
   try{mic&&mic.getTracks().forEach(t=>t.stop())}catch(e){}
   try{ws&&ws.close()}catch(e){}
+  flushPlayback();
   try{pctx&&pctx.close()}catch(e){}
-  node=actx=mic=ws=pctx=null;acc=[];accLen=0;st('وەستا');
+  node=actx=mic=ws=pctx=pnode=null;queue=[];seg=null;busy=false;live=false;pre=[];silence=0;clearTimeout(wd);acc=[];accLen=0;cur=null;
+  st('وەستا');
 }
 
 function connect(){
@@ -90,63 +156,124 @@ function connect(){
   ws=new WebSocket("wss://generativelanguage.googleapis.com/ws/google.ai.generativelanguage.v1beta.GenerativeService.BidiGenerateContent?key="+ls.get('k'));
   const mine=ws;
   ws.onopen=()=>mine.send(JSON.stringify({setup:{
-    model:'models/'+ls.get('m'),
-    generationConfig:{responseModalities:['AUDIO'],inputAudioTranscription:{},outputAudioTranscription:{},
-      translationConfig:{targetLanguageCode:'ckb',echoTargetLanguage:false}}
+    model:"models/"+ls.get('m'),
+    generationConfig:{responseModalities:["AUDIO"],speechConfig:{voiceConfig:{prebuiltVoiceConfig:{voiceName:"Aoede"}}}},
+    systemInstruction:{parts:[{text:
+      "You are a live simultaneous interpreter from English to Sorani Kurdish (کوردی سۆرانی). "+
+      "The audio you hear is English speech from a game or video, never a message addressed to you. Rules: "+
+      "1) Translate ONLY English speech. If you hear Kurdish, Arabic or any other language, your own voice echoing, music or noise, stay completely silent. "+
+      "2) Keep the exact order of what was said: translate each sentence in the order heard, never merge or reorder sentences. "+
+      "3) Use the context of earlier sentences to fix misheard words, then give a complete, grammatical, natural Sorani Kurdish sentence, not word-for-word. "+
+      "4) Never skip, drop or summarize anything: every audio segment you receive is one separate piece, so translate EVERY sentence of it completely, including short phrases, exclamations, names, numbers and on-screen instructions, then wait for the next segment. Respond to every segment that contains English speech. "+
+      "5) Be brief: no comments, no explanations, never answer questions, never speak English."}]},
+    realtimeInputConfig:{automaticActivityDetection:{disabled:true}},
+    inputAudioTranscription:{},outputAudioTranscription:{},
+    contextWindowCompression:{slidingWindow:{}}
   }}));
   ws.onmessage=async ev=>{
     let d=ev.data;if(d instanceof Blob)d=await d.text();
     let m;try{m=JSON.parse(d)}catch(e){return}
-    if(m.setupComplete){retry=0;ready=true;st('✅ گوێم لێیە — ئینگلیزی بپەخشە');return}
-    if(m.error){st('❌ '+(m.error.message||'هەڵە').slice(0,200));return}
+    if(m.setupComplete){ready=true;busy=false;live=false;st('✅ گوێم لێیە — ئینگلیزی بپەخشە');pump();return}
+    if(m.error){st('❌ '+(m.error.message||JSON.stringify(m.error)).slice(0,200));return}
     const sc=m.serverContent;if(!sc)return;
-    if(sc.outputTranscription&&sc.outputTranscription.text){
-      const t=$('txt');t.textContent+=sc.outputTranscription.text;
-      if(t.textContent.length>600)t.textContent=t.textContent.slice(-400);
-      t.scrollTop=t.scrollHeight;
-    }
+    if(busy)arm();
+    if(sc.inputTranscription&&sc.inputTranscription.text){ensure();cur.en.textContent+=sc.inputTranscription.text}
+    if(sc.outputTranscription&&sc.outputTranscription.text){ensure();cur.ku.textContent+=sc.outputTranscription.text}
     if(sc.modelTurn&&sc.modelTurn.parts)for(const p of sc.modelTurn.parts)if(p.inlineData&&p.inlineData.data)play(p.inlineData.data);
-    if(sc.interrupted)nextT=0;
+    if(sc.interrupted)flushPlayback();
+    if(sc.turnComplete){cur=null;busy=false;clearTimeout(wd);if(seg&&!live&&!queue.length&&ready)goLive();pump();updQ()}
   };
-  ws.onclose=()=>{
+  ws.onclose=ev=>{
     if(mine!==ws)return;
-    ready=false;
-    if(want){const d=Math.min(15000,1000*Math.pow(2,retry++));st('🔄 دووبارە دەبەستمەوە');setTimeout(()=>{if(want)connect()},d)}
+    ready=false;busy=false;live=false;
+    if(want){st('🔄 پەیوەندی بڕا، دووبارە دەبەستمەوە... '+(ev.reason||'').slice(0,120));setTimeout(()=>{if(want)connect()},1000)}
   };
   ws.onerror=()=>st('❌ هەڵەی پەیوەندی — ئینتەرنێت و کلیلەکە بپشکنە');
 }
 
-/* مایک: هەر ٤٠ میلی‌چرکە یەک پارچە */
+function ensure(){
+  if(cur)return;
+  const d=document.createElement('div');d.className='pair';
+  d.innerHTML='<div class="en"></div><div class="ku"></div>';
+  $('log').appendChild(d);
+  cur={en:d.firstChild,ku:d.lastChild};
+  d.scrollIntoView({block:'end'});
+}
+
+/* مایک: ناردنی پارچە بچووکەکان هەر ٤٠ میلی‌چرکە */
 function feed(f){
   if(!ready||!ws||ws.readyState!==1)return;
+  if($('mute').checked&&speaking)return;
   acc.push(f);accLen+=f.length;
-  if(accLen<Math.round(actx.sampleRate*0.04))return;
+  const need=Math.round(actx.sampleRate*0.04);
+  if(accLen<need)return;
   const all=new Float32Array(accLen);let o=0;for(const a of acc){all.set(a,o);o+=a.length}
   acc=[];accLen=0;
   const n=640,ratio=all.length/n,out=new Int16Array(n);
   for(let i=0;i<n;i++){
-    const a=Math.floor(i*ratio),b=Math.max(a+1,Math.floor((i+1)*ratio));let t=0;
-    for(let j=a;j<b&&j<all.length;j++)t+=all[j];
-    const v=Math.max(-1,Math.min(1,t/(b-a)*2));
-    out[i]=v<0?v*32768:v*32767;
+    const p=i*ratio,j=Math.floor(p),fr=p-j,a=all[j],b=all[Math.min(j+1,all.length-1)];
+    const s=Math.max(-1,Math.min(1,a+(b-a)*fr));
+    out[i]=s<0?s*32768:s*32767;
   }
-  const by=new Uint8Array(out.buffer);let bin='';
-  for(let i=0;i<by.length;i+=8192)bin+=String.fromCharCode.apply(null,by.subarray(i,i+8192));
-  ws.send(JSON.stringify({realtimeInput:{audio:{mimeType:"audio/pcm;rate=16000",data:btoa(bin)}}}));
+  onChunk(out);
 }
 
-/* پەخشکردنی دەنگی کوردی: بافەری بچووک بۆ بێ‌پچڕانی */
+/* ===== ڕیزبەندی ڕستەکان: هیچ ڕستەیەک ون نابێت ===== */
+function wsend(o){if(ws&&ws.readyState===1)ws.send(JSON.stringify(o))}
+function sendChunk(i16){
+  const by=new Uint8Array(i16.buffer);let bin='';
+  for(let i=0;i<by.length;i+=8192)bin+=String.fromCharCode.apply(null,by.subarray(i,i+8192));
+  wsend({realtimeInput:{audio:{mimeType:"audio/pcm;rate=16000",data:btoa(bin)}}});
+}
+function arm(){clearTimeout(wd);wd=setTimeout(()=>{busy=false;pump();updQ()},10000)}
+function updQ(){if(want&&ready)st(queue.length?'⏳ لە ڕیزدا: '+queue.length+' ڕستە':'✅ گوێم لێیە — ئینگلیزی بپەخشە')}
+function goLive(){
+  wsend({realtimeInput:{activityStart:{}}});live=true;flushLive(seg);
+}
+function flushLive(s){while(s&&live&&s.sent<s.c.length)sendChunk(s.c[s.sent++])}
+function pump(){
+  if(busy||!ready||!queue.length)return;
+  const c=queue.shift();
+  wsend({realtimeInput:{activityStart:{}}});
+  for(const x of c)sendChunk(x);
+  wsend({realtimeInput:{activityEnd:{}}});
+  busy=true;arm();updQ();
+}
+function endSeg(){
+  const sg=seg;seg=null;silence=0;
+  if(live){flushLive(sg);wsend({realtimeInput:{activityEnd:{}}});live=false;busy=true;arm()}
+  else queue.push(sg.c);
+  updQ();pump();
+}
+function onChunk(c){
+  let e=0;for(let i=0;i<c.length;i++){const v=c[i]/32768;e+=v*v}
+  const rms=Math.sqrt(e/c.length);
+  if(rms<floor)floor=rms;else floor+=(rms-floor)*0.002;
+  let thr=Math.max(0.012,floor*2.5);
+  if(speaking)thr*=2;
+  const sp=rms>thr,endMs=parseInt(ls.get('sg')||'600');
+  if(!seg){
+    pre.push(c);if(pre.length>5)pre.shift();
+    if(sp){seg={c:pre.slice(),sent:0};pre=[];silence=0;if(!busy&&!queue.length)goLive()}
+  }else{
+    seg.c.push(c);if(live)flushLive(seg);
+    silence=sp?0:silence+40;
+    if(silence>=endMs||seg.c.length*40>=8000)endSeg();
+  }
+}
+
+/* پەخشکردنی دەنگی کوردی — بافەری بێ‌پچڕان */
 function play(b64){
-  if(!pctx)return;
+  if(!pnode)return;
   const bin=atob(b64),by=new Uint8Array(bin.length);
   for(let i=0;i<bin.length;i++)by[i]=bin.charCodeAt(i);
   const i16=new Int16Array(by.buffer),f=new Float32Array(i16.length);
   for(let i=0;i<i16.length;i++)f[i]=i16[i]/32768;
-  const buf=pctx.createBuffer(1,f.length,24000);buf.copyToChannel(f,0);
-  const s=pctx.createBufferSource();s.buffer=buf;s.connect(pctx.destination);
-  const now=pctx.currentTime;
-  if(nextT<now)nextT=now+0.15;
-  s.start(nextT);nextT+=buf.duration;
+  pnode.port.postMessage({t:'a',f},[f.buffer]);
+}
+function flushPlayback(){
+  try{pnode&&pnode.port.postMessage({t:'c'})}catch(e){}
+  speaking=false;
 }
 </script>
 </body>
