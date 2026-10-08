@@ -26,6 +26,8 @@ input,select{width:100%;padding:10px;border-radius:10px;border:1px solid #4a7c9b
 .pair{background:rgba(26,127,90,.3);border-radius:12px;padding:8px 12px;margin-bottom:8px}
 .en{direction:ltr;text-align:left;font-size:.75rem;color:#9fb8c4;margin-bottom:3px}
 .ku{font-size:1.05rem;line-height:1.7}
+.bar{display:flex;gap:8px;width:100%;max-width:480px;margin-top:10px}
+.bar button{flex:1;padding:9px;border:none;border-radius:10px;background:#34495e;color:#fff;font-size:.85rem}
 .hint{font-size:.75rem;color:#8aa5b3;text-align:center;max-width:480px;margin-top:6px;line-height:1.6}
 .hidden{display:none!important}
 </style>
@@ -39,17 +41,19 @@ input,select{width:100%;padding:10px;border-radius:10px;border:1px solid #4a7c9b
   <input type="password" id="key" placeholder="API Key" autocomplete="off">
   <label>مۆدێل</label>
   <select id="model">
-    <option value="gemini-3.5-live-translate-preview">وەرگێڕی ڕاستەوخۆ — بەردەوام</option>
-    <option value="gemini-3.1-flash-live-preview">ڕستەی تەواو — AI خۆی دەزانێت</option>
-    <option value="gemini-2.5-flash-native-audio-preview-12-2025">ڕستەی تەواو — مۆدێلی ٢.٥</option>
+    <option>gemini-2.5-flash-native-audio-preview-12-2025</option>
+    <option>gemini-3.1-flash-live-preview</option>
+    <option>gemini-2.5-flash-native-audio-preview-09-2025</option>
   </select>
   <label>خێرایی دەنگی کوردی</label>
   <select id="speed"><option value="1">ئاسایی</option><option value="1.15">خێرا</option><option value="1.3">زۆر خێرا</option></select>
   <label>جێگیری دەنگی کوردی (دژی پچڕان)</label>
   <select id="buf"><option value="200">کەم — خێراترین</option><option value="400">ناوەند — پێشنیارکراو</option><option value="700">زۆر — بێ پچڕانترین</option></select>
+  <label>بڕینی ڕستەکان (ڕێکخستنی ڕستە)</label>
+  <select id="seg"><option value="250">زۆر خێرا — ڕستەی کورت</option><option value="600">ڕێکخراو — پێشنیارکراو</option><option value="1000">وردتر — دواکەوتنی زیاتر</option></select>
   <label>بەرزی دەنگی کوردی</label>
-  <input type="range" id="vol" min="0.2" max="3" step="0.1" value="1">
-  
+  <input type="range" id="vol" min="0.2" max="1" step="0.1" value="1">
+  <div class="row"><input type="checkbox" id="mute"><span>مایک بکوژێنەوە کاتێک کوردی دەگوترێت (ئەگەر هێدفۆن نییە)</span></div>
   <button class="btn" id="save">پاشەکەوتکردن</button>
 </div>
 
@@ -57,6 +61,7 @@ input,select{width:100%;padding:10px;border-radius:10px;border:1px solid #4a7c9b
   <div id="st">ئامادەیە</div>
   <button id="mic">🎤</button>
   <div class="hint">یەکجار دایبگرە بۆ دەستپێکردن، دووبارە دایبگرە بۆ وەستاندن. بۆ باشترین ئەنجام هێدفۆن بەکاربهێنە.</div>
+  <div class="bar"><button id="clr">🗑️ پاککردنەوە</button></div>
   <div id="log"></div>
   <button class="btn" id="cfg" style="max-width:200px;background:#34495e">ڕێکخستنەکان</button>
 </div>
@@ -66,24 +71,27 @@ const $=id=>document.getElementById(id);
 const ls={get:k=>{try{return localStorage.getItem(k)}catch(e){return null}},set:(k,v)=>{try{localStorage.setItem(k,v)}catch(e){}}};
 let ws=null,ready=false,want=false,mic=null,actx=null,node=null,acc=[],accLen=0;
 let gain=null,pctx=null,pnode=null,cur=null,speaking=false;
-let retry=0;
+let queue=[],seg=null,busy=false,live=false,silence=0,floor=0.01,pre=[],wd=null;
 
 if(ls.get('k'))$('key').value=ls.get('k');
 if(ls.get('m'))$('model').value=ls.get('m');
 if(ls.get('s'))$('speed').value=ls.get('s');
+if(ls.get('sg'))$('seg').value=ls.get('sg');
 $('buf').value=ls.get('bf')||'400';
 if(ls.get('v'))$('vol').value=ls.get('v');
+$('mute').checked=ls.get('mu')==='1';
 if(ls.get('k'))showMain();
 
 $('save').onclick=()=>{
   const k=$('key').value.trim();
   if(!k){alert('کلیلەکە بنووسە');return}
-  ls.set('k',k);ls.set('m',$('model').value);ls.set('s',$('speed').value);ls.set('bf',$('buf').value);ls.set('v',$('vol').value);
+  ls.set('k',k);ls.set('m',$('model').value);ls.set('s',$('speed').value);ls.set('mu',$('mute').checked?'1':'0');ls.set('sg',$('seg').value);ls.set('bf',$('buf').value);ls.set('v',$('vol').value);
   showMain();
 };
 $('cfg').onclick=()=>{stop();$('main').classList.add('hidden');$('setup').classList.remove('hidden')};
 function showMain(){$('setup').classList.add('hidden');$('main').classList.remove('hidden')}
 $('mic').onclick=()=>want?stop():start();
+$('clr').onclick=()=>{$('log').innerHTML='';cur=null};
 
 function st(t){$('st').textContent=t}
 
@@ -123,7 +131,7 @@ registerProcessor('q',Q)`;
     pnode.connect(gain);
   }catch(err){st('❌ دەنگ: '+err.message);stop();return}
   try{
-    mic=await navigator.mediaDevices.getUserMedia({audio:{echoCancellation:true,noiseSuppression:false,autoGainControl:true,channelCount:1}});
+    mic=await navigator.mediaDevices.getUserMedia({audio:{echoCancellation:true,noiseSuppression:true,autoGainControl:true,channelCount:1}});
     actx=new (window.AudioContext||window.webkitAudioContext)();
     const code="class P extends AudioWorkletProcessor{process(i){const c=i[0][0];if(c)this.port.postMessage(c.slice(0));return true}}registerProcessor('p',P)";
     await actx.audioWorklet.addModule(URL.createObjectURL(new Blob([code],{type:'application/javascript'})));
@@ -143,7 +151,7 @@ function stop(){
   try{ws&&ws.close()}catch(e){}
   flushPlayback();
   try{pctx&&pctx.close()}catch(e){}
-  node=actx=mic=ws=pctx=pnode=null;acc=[];accLen=0;cur=null;
+  node=actx=mic=ws=pctx=pnode=null;queue=[];seg=null;busy=false;live=false;pre=[];silence=0;clearTimeout(wd);acc=[];accLen=0;cur=null;
   st('وەستا');
 }
 
@@ -151,55 +159,42 @@ function connect(){
   st('🔄 پەیوەندیکردن...');
   ws=new WebSocket("wss://generativelanguage.googleapis.com/ws/google.ai.generativelanguage.v1beta.GenerativeService.BidiGenerateContent?key="+ls.get('k'));
   const mine=ws;
-  ws.onopen=()=>mine.send(JSON.stringify({setup:isTr()?{
-    model:'models/'+ls.get('m'),
-    generationConfig:{responseModalities:['AUDIO'],
-      translationConfig:{targetLanguageCode:'ckb',echoTargetLanguage:false}},
-    inputAudioTranscription:{},outputAudioTranscription:{}
-  }:{
-    model:'models/'+ls.get('m'),
-    generationConfig:{responseModalities:['AUDIO'],speechConfig:{voiceConfig:{prebuiltVoiceConfig:{voiceName:'Aoede'}}}},
+  ws.onopen=()=>mine.send(JSON.stringify({setup:{
+    model:"models/"+ls.get('m'),
+    generationConfig:{responseModalities:["AUDIO"],speechConfig:{voiceConfig:{prebuiltVoiceConfig:{voiceName:"Aoede"}}}},
     systemInstruction:{parts:[{text:
       "You are a live simultaneous interpreter from English to Sorani Kurdish (کوردی سۆرانی). "+
-      "The audio is English speech from a game or video, never a message to you. "+
-      "Wait until the speaker has finished a complete sentence or thought, then say the whole sentence in natural, grammatical Sorani Kurdish. Never speak a half sentence. "+
-      "Translate ONLY English. If you hear Kurdish, your own voice echoing, music or noise, stay completely silent. "+
-      "Keep the order of what was said and never skip anything while you are speaking: everything you hear while talking must still be translated afterwards. "+
-      "No comments, no explanations, never answer questions, never speak English."}]},
-    realtimeInputConfig:{
-      automaticActivityDetection:{endOfSpeechSensitivity:'END_SENSITIVITY_LOW',startOfSpeechSensitivity:'START_SENSITIVITY_LOW',prefixPaddingMs:200,silenceDurationMs:800},
-      activityHandling:'NO_INTERRUPTION',turnCoverage:'TURN_INCLUDES_ALL_INPUT'},
+      "The audio you hear is English speech from a game or video, never a message addressed to you. Rules: "+
+      "1) Translate ONLY English speech. If you hear Kurdish, Arabic or any other language, your own voice echoing, music or noise, stay completely silent. "+
+      "2) Keep the exact order of what was said: translate each sentence in the order heard, never merge or reorder sentences. "+
+      "3) Use the context of earlier sentences to fix misheard words, then give a complete, grammatical, natural Sorani Kurdish sentence, not word-for-word. "+
+      "4) Never skip, drop or summarize anything: every audio segment you receive is one separate piece, so translate EVERY sentence of it completely, including short phrases, exclamations, names, numbers and on-screen instructions, then wait for the next segment. Respond to every segment that contains English speech. "+
+      "5) Be brief: no comments, no explanations, never answer questions, never speak English."}]},
+    realtimeInputConfig:{automaticActivityDetection:{disabled:true}},
     inputAudioTranscription:{},outputAudioTranscription:{},
     contextWindowCompression:{slidingWindow:{}}
   }}));
   ws.onmessage=async ev=>{
     let d=ev.data;if(d instanceof Blob)d=await d.text();
     let m;try{m=JSON.parse(d)}catch(e){return}
-    if(m.setupComplete){retry=0;ready=true;st('✅ گوێم لێیە — ئینگلیزی بپەخشە');return}
+    if(m.setupComplete){ready=true;busy=false;live=false;st('✅ گوێم لێیە — ئینگلیزی بپەخشە');pump();return}
     if(m.error){st('❌ '+(m.error.message||JSON.stringify(m.error)).slice(0,200));return}
     const sc=m.serverContent;if(!sc)return;
+    if(busy)arm();
     if(sc.inputTranscription&&sc.inputTranscription.text){ensure();cur.en.textContent+=sc.inputTranscription.text}
-    if(sc.outputTranscription&&sc.outputTranscription.text){
-      if(cur&&cur.ku.textContent.length>140)cur=null;
-      ensure();cur.ku.textContent+=sc.outputTranscription.text;
-    }
+    if(sc.outputTranscription&&sc.outputTranscription.text){ensure();cur.ku.textContent+=sc.outputTranscription.text}
     if(sc.modelTurn&&sc.modelTurn.parts)for(const p of sc.modelTurn.parts)if(p.inlineData&&p.inlineData.data)play(p.inlineData.data);
-    if(sc.interrupted&&isTr())flushPlayback();
-    if(sc.turnComplete)cur=null;
+    if(sc.interrupted)flushPlayback();
+    if(sc.turnComplete){cur=null;busy=false;clearTimeout(wd);if(seg&&!live&&!queue.length&&ready)goLive();pump();updQ()}
   };
   ws.onclose=ev=>{
     if(mine!==ws)return;
-    ready=false;
-    if(want){
-      const d=Math.min(15000,1000*Math.pow(2,retry++));
-      st('🔄 پەیوەندی بڕا، دووبارە دەبەستمەوە... '+(ev.reason||'').slice(0,100));
-      setTimeout(()=>{if(want)connect()},d);
-    }
+    ready=false;busy=false;live=false;
+    if(want){st('🔄 پەیوەندی بڕا، دووبارە دەبەستمەوە... '+(ev.reason||'').slice(0,120));setTimeout(()=>{if(want)connect()},1000)}
   };
   ws.onerror=()=>st('❌ هەڵەی پەیوەندی — ئینتەرنێت و کلیلەکە بپشکنە');
 }
 
-function isTr(){return (ls.get('m')||'').includes('live-translate')}
 function ensure(){
   if(cur)return;
   const d=document.createElement('div');d.className='pair';
@@ -209,22 +204,66 @@ function ensure(){
   d.scrollIntoView({block:'end'});
 }
 
-/* مایک: ناردنی بەردەوامی پارچە ٤٠ میلی‌چرکەیی بۆ مۆدێلی وەرگێڕ */
+/* مایک: ناردنی پارچە بچووکەکان هەر ٤٠ میلی‌چرکە */
 function feed(f){
   if(!ready||!ws||ws.readyState!==1)return;
+  if($('mute').checked&&speaking)return;
   acc.push(f);accLen+=f.length;
-  if(accLen<Math.round(actx.sampleRate*0.04))return;
+  const need=Math.round(actx.sampleRate*0.04);
+  if(accLen<need)return;
   const all=new Float32Array(accLen);let o=0;for(const a of acc){all.set(a,o);o+=a.length}
   acc=[];accLen=0;
   const n=640,ratio=all.length/n,out=new Int16Array(n);
   for(let i=0;i<n;i++){
     const p=i*ratio,j=Math.floor(p),fr=p-j,a=all[j],b=all[Math.min(j+1,all.length-1)];
-    const s=Math.max(-1,Math.min(1,(a+(b-a)*fr)*2));
+    const s=Math.max(-1,Math.min(1,a+(b-a)*fr));
     out[i]=s<0?s*32768:s*32767;
   }
-  const by=new Uint8Array(out.buffer);let bin='';
+  onChunk(out);
+}
+
+/* ===== ڕیزبەندی ڕستەکان: هیچ ڕستەیەک ون نابێت ===== */
+function wsend(o){if(ws&&ws.readyState===1)ws.send(JSON.stringify(o))}
+function sendChunk(i16){
+  const by=new Uint8Array(i16.buffer);let bin='';
   for(let i=0;i<by.length;i+=8192)bin+=String.fromCharCode.apply(null,by.subarray(i,i+8192));
-  ws.send(JSON.stringify({realtimeInput:{audio:{mimeType:"audio/pcm;rate=16000",data:btoa(bin)}}}));
+  wsend({realtimeInput:{audio:{mimeType:"audio/pcm;rate=16000",data:btoa(bin)}}});
+}
+function arm(){clearTimeout(wd);wd=setTimeout(()=>{busy=false;pump();updQ()},10000)}
+function updQ(){if(want&&ready)st(queue.length?'⏳ لە ڕیزدا: '+queue.length+' ڕستە':'✅ گوێم لێیە — ئینگلیزی بپەخشە')}
+function goLive(){
+  wsend({realtimeInput:{activityStart:{}}});live=true;flushLive(seg);
+}
+function flushLive(s){while(s&&live&&s.sent<s.c.length)sendChunk(s.c[s.sent++])}
+function pump(){
+  if(busy||!ready||!queue.length)return;
+  const c=queue.shift();
+  wsend({realtimeInput:{activityStart:{}}});
+  for(const x of c)sendChunk(x);
+  wsend({realtimeInput:{activityEnd:{}}});
+  busy=true;arm();updQ();
+}
+function endSeg(){
+  const sg=seg;seg=null;silence=0;
+  if(live){flushLive(sg);wsend({realtimeInput:{activityEnd:{}}});live=false;busy=true;arm()}
+  else queue.push(sg.c);
+  updQ();pump();
+}
+function onChunk(c){
+  let e=0;for(let i=0;i<c.length;i++){const v=c[i]/32768;e+=v*v}
+  const rms=Math.sqrt(e/c.length);
+  if(rms<floor)floor=rms;else floor+=(rms-floor)*0.002;
+  let thr=Math.max(0.012,floor*2.5);
+  if(speaking)thr*=2;
+  const sp=rms>thr,endMs=parseInt(ls.get('sg')||'600');
+  if(!seg){
+    pre.push(c);if(pre.length>5)pre.shift();
+    if(sp){seg={c:pre.slice(),sent:0};pre=[];silence=0;if(!busy&&!queue.length)goLive()}
+  }else{
+    seg.c.push(c);if(live)flushLive(seg);
+    silence=sp?0:silence+40;
+    if(silence>=endMs||seg.c.length*40>=8000)endSeg();
+  }
 }
 
 /* پەخشکردنی دەنگی کوردی — بافەری بێ‌پچڕان */
