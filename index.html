@@ -48,6 +48,7 @@ input,select{width:100%;padding:10px;border-radius:10px;border:1px solid #4a7c9b
     <option>gemini-3.8-live</option>
     <option>gemini-3.1-flash-live-preview</option>
     <option>gemini-2.5-flash-native-audio-preview-12-2025</option>
+    <option>gemini-3.5-live-translate-preview</option>
   </select>
   <label>خێرایی دەنگی کوردی</label>
   <select id="speed"><option value="1">ئاسایی</option><option value="1.15">خێرا</option><option value="1.3">زۆر خێرا</option></select>
@@ -223,7 +224,7 @@ function connect(){
   st('🔄 پەیوەندیکردن...');
   ws=new WebSocket("wss://generativelanguage.googleapis.com/ws/google.ai.generativelanguage.v1beta.GenerativeService.BidiGenerateContent?key="+ls.get('k'));
   const mine=ws;
-  ws.onopen=()=>mine.send(JSON.stringify({setup:{
+  ws.onopen=()=>mine.send(JSON.stringify({setup:isTr()?TR():{
     model:"models/"+ls.get('m'),
     generationConfig:{responseModalities:["AUDIO"],speechConfig:{voiceConfig:{prebuiltVoiceConfig:{voiceName:ls.get('vc')||"Aoede"}}}},
     systemInstruction:{parts:[{text:isAcc()?READER:
@@ -248,7 +249,7 @@ function connect(){
     const sc=m.serverContent;if(!sc)return;
     if(busy)arm();
     if(sc.inputTranscription&&sc.inputTranscription.text){ensure();cur.en.textContent+=sc.inputTranscription.text}
-    if(!isAcc()&&sc.outputTranscription&&sc.outputTranscription.text){ensure();cur.ku.textContent+=sc.outputTranscription.text}
+    if(!isAcc()&&sc.outputTranscription&&sc.outputTranscription.text){if(isTr()&&cur&&cur.ku.textContent.length>140){saveH(cur);cur=null}ensure();cur.ku.textContent+=sc.outputTranscription.text}
     if(sc.modelTurn&&sc.modelTurn.parts)for(const p of sc.modelTurn.parts)if(p.inlineData&&p.inlineData.data)play(p.inlineData.data);
     if(sc.interrupted)flushPlayback();
     if(sc.turnComplete){
@@ -273,7 +274,9 @@ function connect(){
 }
 
 const READER="You are a Kurdish text-to-speech reader. Read aloud exactly, word for word, the Sorani Kurdish text you receive, with clear, calm, natural pronunciation and correct stress. Never translate, add, skip, explain or answer anything. Never speak any other language.";
-function isAcc(){return (ls.get('md')||'a')==='a'}
+function isTr(){return (ls.get('m')||'').includes('live-translate')}
+function isAcc(){return !isTr()&&(ls.get('md')||'a')==='a'}
+function TR(){return{model:'models/'+ls.get('m'),generationConfig:{responseModalities:['AUDIO'],inputAudioTranscription:{},outputAudioTranscription:{},translationConfig:{targetLanguageCode:'ckb',echoTargetLanguage:false}}}}
 
 /* ===== قۆناغی یەکەم: تێگەیشتنی ورد لە ئینگلیزی + وەرگێڕانی کوردی ===== */
 function toWav(c){
@@ -404,6 +407,7 @@ function endSeg(){
   updQ();pump();
 }
 function onChunk(c){
+  if(isTr()){sendChunk(c);return}
   let e=0;for(let i=0;i<c.length;i++){const v=c[i]/32768;e+=v*v}
   const rms=Math.sqrt(e/c.length);
   if(rms<floor)floor=rms;else floor+=(rms-floor)*0.002;
