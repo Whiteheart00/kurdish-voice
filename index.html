@@ -26,8 +26,9 @@ input,select{width:100%;padding:10px;border-radius:10px;border:1px solid #4a7c9b
 .pair{background:rgba(26,127,90,.3);border-radius:12px;padding:8px 12px;margin-bottom:8px}
 .en{direction:ltr;text-align:left;font-size:.75rem;color:#9fb8c4;margin-bottom:3px}
 .ku{font-size:calc(1.05rem*var(--fs,1));line-height:1.7}
-#lvlw{width:100%;max-width:300px;height:8px;background:rgba(255,255,255,.12);border-radius:4px;margin-top:8px;overflow:hidden}
+#lvlw{position:relative;width:100%;max-width:300px;height:8px;background:rgba(255,255,255,.12);border-radius:4px;margin-top:8px;overflow:hidden}
 #lvl{height:100%;width:0;background:#7f8c8d}
+#thr{position:absolute;top:0;bottom:0;width:2px;background:#ffd166;left:0}
 .bar{display:flex;gap:8px;width:100%;max-width:480px;margin-top:10px}
 .bar button{flex:1;padding:9px;border:none;border-radius:10px;background:#34495e;color:#fff;font-size:.85rem}
 #stat{font-size:.72rem;color:#7f9aa8;margin-top:6px;min-height:14px}
@@ -44,9 +45,9 @@ input,select{width:100%;padding:10px;border-radius:10px;border:1px solid #4a7c9b
   <input type="password" id="key" placeholder="API Key" autocomplete="off">
   <label>مۆدێل</label>
   <select id="model">
-    <option>gemini-2.5-flash-native-audio-preview-12-2025</option>
+    <option>gemini-3.8-live</option>
     <option>gemini-3.1-flash-live-preview</option>
-    <option>gemini-2.5-flash-native-audio-preview-09-2025</option>
+    <option>gemini-2.5-flash-native-audio-preview-12-2025</option>
   </select>
   <label>خێرایی دەنگی کوردی</label>
   <select id="speed"><option value="1">ئاسایی</option><option value="1.15">خێرا</option><option value="1.3">زۆر خێرا</option></select>
@@ -66,7 +67,11 @@ input,select{width:100%;padding:10px;border-radius:10px;border:1px solid #4a7c9b
   <label>شێوازی وەرگێڕان</label>
   <select id="md"><option value="a">دوو قۆناغ — تێگەیشتنی وردتر (پێشنیارکراو)</option><option value="f">یەک قۆناغ — خێراتر</option></select>
   <label>مۆدێلی تێگەیشتن و وەرگێڕان (قۆناغی یەکەم)</label>
-  <select id="tm"><option>gemini-2.5-flash</option><option>gemini-2.5-pro</option><option>gemini-2.5-flash-lite</option></select>
+  <select id="tm"><option>gemini-3.8-flash</option><option>gemini-3.7-flash</option></select>
+  <label>سنووری داواکاری لە خولەکێکدا (لە AI Studio ← Rate limit ببینە)</label>
+  <select id="rp"><option value="5">٥ — پلانی خۆڕای</option><option value="10">١٠</option><option value="15">١٥</option><option value="30">٣٠</option></select>
+  <label>کاتی بڕین کاتێک «بڕینی دەنگ» کوژاوەیە</label>
+  <select id="fx"><option value="3000">هەر ٣ چرکە</option><option value="5000">هەر ٥ چرکە</option><option value="7000">هەر ٧ چرکە</option></select>
   <label>دەنگی وەرگێڕ</label>
   <select id="vc"><option>Aoede</option><option>Kore</option><option>Puck</option><option>Charon</option><option>Fenrir</option><option>Leda</option><option>Zephyr</option><option>Orus</option></select>
   <label>فەرهەنگی تایبەت بە یاری (هەر دێڕێک: English = کوردی)</label>
@@ -80,10 +85,10 @@ input,select{width:100%;padding:10px;border-radius:10px;border:1px solid #4a7c9b
 <div id="main" class="hidden">
   <div id="st">ئامادەیە</div>
   <button id="mic">🎤</button>
-  <div id="lvlw"><div id="lvl"></div></div>
+  <div id="lvlw"><div id="lvl"></div><div id="thr"></div></div>
   <div class="hint">یەکجار دایبگرە بۆ دەستپێکردن، دووبارە دایبگرە بۆ وەستاندن. بۆ باشترین ئەنجام هێدفۆن بەکاربهێنە.</div>
   <div id="stat"></div>
-  <div class="bar"><button id="clr">🗑️ پاککردنەوە</button><button id="cpy">📋 کۆپی</button></div>
+  <div class="bar"><button id="clr">🗑️ پاککردنەوە</button><button id="cpy">📋 کۆپی</button><button id="vdb"></button></div>
   <div id="log"></div>
   <button class="btn" id="cfg" style="max-width:200px;background:#34495e">ڕێکخستنەکان</button>
 </div>
@@ -93,16 +98,16 @@ const $=id=>document.getElementById(id);
 const ls={get:k=>{try{return localStorage.getItem(k)}catch(e){return null}},set:(k,v)=>{try{localStorage.setItem(k,v)}catch(e){}}};
 let ws=null,ready=false,want=false,mic=null,actx=null,node=null,acc=[],accLen=0;
 let gain=null,pctx=null,pnode=null,cur=null,speaking=false;
-let speakQ=[],busyT=false,lastEn=[];
+let speakQ=[],busyT=false,lastEn=[],lastReq=0,tmr=null;
 let resumeH=null,retry=0,pendingReset=false,wl=null,tAct=0,lats=[],histLoaded=false;
 let queue=[],seg=null,busy=false,live=false,silence=0,floor=0.01,pre=[],wd=null;
 
 if(ls.get('k'))$('key').value=ls.get('k');
-if(ls.get('m'))$('model').value=ls.get('m');
+$('model').value=ls.get('m')||'';if(!$('model').value)$('model').selectedIndex=0;ls.set('m',$('model').value);
 if(ls.get('s'))$('speed').value=ls.get('s');
 if(ls.get('sg'))$('seg').value=ls.get('sg');
 $('buf').value=ls.get('bf')||'400';
-$('vc').value=ls.get('vc')||'Aoede';$('md').value=ls.get('md')||'a';$('tm').value=ls.get('tm')||'gemini-2.5-flash';$('gl').value=ls.get('gl')||'';$('fs').value=ls.get('fs')||'1';$('en').checked=ls.get('en')!=='0';
+$('vc').value=ls.get('vc')||'Aoede';$('md').value=ls.get('md')||'a';$('fx').value=ls.get('fx')||'5000';$('tm').value=ls.get('tm')||'';if(!$('tm').value)$('tm').selectedIndex=0;ls.set('tm',$('tm').value);$('rp').value=ls.get('rp')||'5';$('gl').value=ls.get('gl')||'';$('fs').value=ls.get('fs')||'1';$('en').checked=ls.get('en')!=='0';
 $('mm').value=ls.get('mm')||'n';$('mg').value=ls.get('mg')||'2';$('sn').value=ls.get('sn')||'0.008';
 if(ls.get('v'))$('vol').value=ls.get('v');
 $('mute').checked=ls.get('mu')==='1';
@@ -111,7 +116,7 @@ if(ls.get('k'))showMain();
 $('save').onclick=()=>{
   const k=$('key').value.trim();
   if(!k){alert('کلیلەکە بنووسە');return}
-  ls.set('k',k);ls.set('m',$('model').value);ls.set('s',$('speed').value);ls.set('mu',$('mute').checked?'1':'0');ls.set('sg',$('seg').value);ls.set('bf',$('buf').value);ls.set('mm',$('mm').value);ls.set('vc',$('vc').value);ls.set('md',$('md').value);ls.set('tm',$('tm').value);ls.set('gl',$('gl').value);ls.set('fs',$('fs').value);ls.set('en',$('en').checked?'1':'0');ls.set('mg',$('mg').value);ls.set('sn',$('sn').value);ls.set('v',$('vol').value);
+  ls.set('k',k);ls.set('m',$('model').value);ls.set('s',$('speed').value);ls.set('mu',$('mute').checked?'1':'0');ls.set('sg',$('seg').value);ls.set('bf',$('buf').value);ls.set('mm',$('mm').value);ls.set('vc',$('vc').value);ls.set('md',$('md').value);ls.set('fx',$('fx').value);ls.set('tm',$('tm').value);ls.set('rp',$('rp').value);ls.set('gl',$('gl').value);ls.set('fs',$('fs').value);ls.set('en',$('en').checked?'1':'0');ls.set('mg',$('mg').value);ls.set('sn',$('sn').value);ls.set('v',$('vol').value);
   showMain();
 };
 $('cfg').onclick=()=>{stop();$('main').classList.add('hidden');$('setup').classList.remove('hidden')};
@@ -120,6 +125,8 @@ function showMain(){
   document.documentElement.style.setProperty('--fs',ls.get('fs')||'1');
   if(!histLoaded){histLoaded=true;try{for(const x of JSON.parse(ls.get('h')||'[]'))mkPair(x.e,x.k)}catch(e){}}
 }
+function vdOn(){return ls.get('vd')!=='0'}
+function updVd(){$('vdb').textContent=vdOn()?'✂️ بڕینی دەنگ: داگیرساوە':'✂️ بڕینی دەنگ: کوژاوەتەوە'}
 function mkPair(e,k){
   const d=document.createElement('div');d.className='pair';
   d.innerHTML='<div class="en"></div><div class="ku"></div>';
@@ -131,6 +138,8 @@ function saveH(c){
   try{const h=JSON.parse(ls.get('h')||'[]');h.push({e:c.en.textContent,k:c.ku.textContent});ls.set('h',JSON.stringify(h.slice(-100)))}catch(e){}
 }
 $('mic').onclick=()=>want?stop():start();
+updVd();
+$('vdb').onclick=()=>{ls.set('vd',vdOn()?'0':'1');updVd();st(vdOn()?'✂️ دوای هەر ڕاگرتنێکی دەنگ ڕستە دەبڕدرێت':'✂️ بڕینی دەنگ کوژایەوە — بە کات دەبڕدرێت')};
 $('clr').onclick=()=>{$('log').innerHTML='';ls.set('h','[]');cur=null};
 $('cpy').onclick=async()=>{
   const t=Array.from(document.querySelectorAll('.pair')).map(d=>d.children[0].textContent+'\n'+d.children[1].textContent).join('\n\n');
@@ -206,7 +215,7 @@ function stop(){
   try{ws&&ws.close()}catch(e){}
   flushPlayback();
   try{pctx&&pctx.close()}catch(e){}
-  node=actx=mic=ws=pctx=pnode=null;queue=[];speakQ=[];busyT=false;lastEn=[];seg=null;busy=false;live=false;pre=[];silence=0;clearTimeout(wd);acc=[];accLen=0;cur=null;
+  node=actx=mic=ws=pctx=pnode=null;clearTimeout(tmr);queue=[];speakQ=[];busyT=false;lastEn=[];seg=null;busy=false;live=false;pre=[];silence=0;clearTimeout(wd);acc=[];accLen=0;cur=null;
   st('وەستا');
 }
 
@@ -277,35 +286,44 @@ function toWav(c){
   const by=new Uint8Array(b);let t='';for(let i=0;i<by.length;i+=8192)t+=String.fromCharCode.apply(null,by.subarray(i,i+8192));
   return btoa(t);
 }
-async function translateSeg(c){
+async function translateBatch(batch){
   const g=(ls.get('gl')||'').trim();
-  const prompt="Transcribe the English speech in this audio exactly as spoken (it comes from a game or video; ignore music, sound effects, and any Kurdish or other-language voices). "+
-    "Then translate it into natural, grammatical, standard Sorani Kurdish (کوردی سۆرانی) using correct Kurdish letters (ڕ ڵ ۆ ێ ە, and ک never ك). Translate everything completely; never summarize or skip. "+
-    (lastEn.length?"Previous sentences, for context only: "+lastEn.join(' ')+". ":"")+
+  const prompt="You will receive "+batch.length+" separate audio segments in order, from a game or video. For EACH segment, transcribe the English speech exactly as spoken (ignore music, sound effects and any Kurdish or other-language voices), then translate it into natural, grammatical, standard Sorani Kurdish (کوردی سۆرانی) with correct Kurdish letters (ڕ ڵ ۆ ێ ە, and ک never ك). Translate everything completely; never summarize or skip. "+
+    (lastEn.length?"Earlier sentences, for context only: "+lastEn.join(' ')+". ":"")+
     (g?"Always use these exact translations for these terms:\n"+g+"\n":"")+
-    'Reply with JSON only: {"en":"<English transcript>","ku":"<Sorani translation>"}. If there is no English speech, return empty strings.';
-  const body={contents:[{parts:[{inline_data:{mime_type:'audio/wav',data:toWav(c)}},{text:prompt}]}],
-    generationConfig:{temperature:0.2,responseMimeType:'application/json',thinkingConfig:{thinkingBudget:0}}};
-  const url='https://generativelanguage.googleapis.com/v1beta/models/'+(ls.get('tm')||'gemini-2.5-flash')+':generateContent?key='+ls.get('k');
+    'Reply with a JSON array of exactly '+batch.length+' objects in the same order: [{"en":"<English>","ku":"<Sorani>"}]. Use empty strings for a segment with no English speech.';
+  const parts=[];
+  batch.forEach((c,i)=>{parts.push({text:'Segment '+(i+1)+':'});parts.push({inline_data:{mime_type:'audio/wav',data:toWav(c)}})});
+  parts.push({text:prompt});
+  const body={contents:[{parts}],generationConfig:{responseMimeType:'application/json',thinkingConfig:{thinkingLevel:'low'}}};
+  const url='https://generativelanguage.googleapis.com/v1beta/models/'+(ls.get('tm')||'gemini-3.8-flash')+':generateContent?key='+ls.get('k');
   for(let t=0;t<3;t++){
     const r=await fetch(url,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
-    if(r.status===429){st('⏳ سنووری خۆڕایی، چاوەڕێ دەکەم...');await new Promise(z=>setTimeout(z,2500*(t+1)));continue}
-    if(!r.ok)throw new Error('وەرگێڕان '+r.status);
+    if(r.status===429){st('⏳ سنووری خۆڕایی، چاوەڕێ دەکەم...');await new Promise(z=>setTimeout(z,13000));lastReq=Date.now();continue}
+    if(!r.ok){let m='';try{m=(await r.json()).error.message}catch(e){}throw new Error('وەرگێڕان '+r.status+' '+m.slice(0,140))}
     const d=await r.json();
     const tx=d.candidates&&d.candidates[0]&&d.candidates[0].content.parts.map(p=>p.text||'').join('');
-    try{return JSON.parse(tx)}catch(e){return null}
+    try{const a=JSON.parse(tx);return Array.isArray(a)?a:[a]}catch(e){return[]}
   }
   throw new Error('سنووری خۆڕایی پڕە');
 }
-async function pumpT(){
+function pumpT(){
   if(busyT||!queue.length)return;
-  busyT=true;const c=queue.shift();updQ();
+  const gap=60000/(parseInt(ls.get('rp')||'5'))+500,wait=lastReq+gap-Date.now();
+  if(wait>0){clearTimeout(tmr);tmr=setTimeout(pumpT,wait);return}
+  runT();
+}
+async function runT(){
+  busyT=true;lastReq=Date.now();
+  const batch=queue.splice(0,6);updQ();
   try{
-    const r=await translateSeg(c);
-    if(r&&r.ku&&r.ku.trim()){
-      const d=mkPair(r.en,r.ku);d.scrollIntoView({block:'end'});
-      saveH({en:{textContent:r.en||''},ku:{textContent:r.ku}});
-      speakQ.push(r.ku);lastEn.push(r.en||'');if(lastEn.length>4)lastEn.shift();
+    const rs=await translateBatch(batch);
+    for(const r of rs){
+      if(r&&r.ku&&r.ku.trim()){
+        const d=mkPair(r.en,r.ku);d.scrollIntoView({block:'end'});
+        saveH({en:{textContent:r.en||''},ku:{textContent:r.ku}});
+        speakQ.push(r.ku);lastEn.push(r.en||'');if(lastEn.length>4)lastEn.shift();
+      }
     }
   }catch(e){st('❌ '+e.message)}
   busyT=false;pumpSpeak();pumpT();
@@ -314,7 +332,7 @@ async function pumpT(){
 function pumpSpeak(){
   if(busy||!ready||!speakQ.length)return;
   const t=speakQ.shift();
-  if((ls.get('m')||'').includes('3.1'))wsend({realtimeInput:{text:t}});
+  if((ls.get('m')||'').includes('gemini-3'))wsend({realtimeInput:{text:t}});
   else wsend({clientContent:{turns:[{role:'user',parts:[{text:t}]}],turnComplete:true}});
   busy=true;arm();
 }
@@ -392,14 +410,18 @@ function onChunk(c){
   let thr=Math.max(parseFloat(ls.get('sn')||'0.008'),floor*2.2);
   if(speaking)thr*=2;
   const sp=rms>thr,endMs=parseInt(ls.get('sg')||'600');
+  const T=$('thr');if(T)T.style.left=Math.min(100,thr*500)+'%';
   const L=$('lvl');if(L){L.style.width=Math.min(100,rms*500)+'%';L.style.background=sp?'#2ecc71':'#7f8c8d'}
   if(!seg){
     pre.push(c);if(pre.length>10)pre.shift();
-    if(sp){seg={c:pre.slice(),sent:0};pre=[];silence=0;if(!busy&&!queue.length)goLive()}
+    if(sp){seg={c:pre.slice(),sent:0,lv:rms};pre=[];silence=0;if(!busy&&!queue.length)goLive()}
   }else{
     seg.c.push(c);if(live)flushLive(seg);
-    silence=sp?0:silence+40;
-    if(silence>=endMs||seg.c.length*40>=8000)endSeg();
+    const loud=rms>Math.max(thr,seg.lv*0.3);
+    seg.lv=Math.max(rms,seg.lv*0.99);
+    silence=loud?0:silence+40;
+    const len=seg.c.length*40;
+    if(vdOn()?(silence>=endMs||len>=10000):len>=parseInt(ls.get('fx')||'5000'))endSeg();
   }
 }
 
