@@ -64,6 +64,8 @@ textarea{resize:vertical;min-height:90px;line-height:1.5}
   <select id="buf"><option value="200">کەم — خێراترین</option><option value="400">ناوەند — پێشنیارکراو</option><option value="700">زۆر — بێ پچڕانترین</option></select>
   <label>بڕینی ڕستەکان (ڕێکخستنی ڕستە)</label>
   <select id="seg"><option value="250">زۆر خێرا — ڕستەی کورت</option><option value="600">ڕێکخراو — پێشنیارکراو</option><option value="1000">وردتر — دواکەوتنی زیاتر</option></select>
+  <label>🎵 فلتەری میوزیک و دەنگی ناقسە (لە ڕیزی ڕستەکان دایناندەنێت)</label>
+  <select id="mf"><option value="0">کوژاوە</option><option value="1">ئاسایی — پێشنیارکراو</option><option value="2">توند — میوزیکی زیاتر دەگرێت</option></select>
   <label>بەرزی دەنگی کوردی</label>
   <input type="range" id="vol" min="0.2" max="1" step="0.1" value="1">
   <div class="row"><input type="checkbox" id="mute"><span>مایک بکوژێنەوە کاتێک کوردی دەگوترێت (ئەگەر هێدفۆن نییە)</span></div>
@@ -86,7 +88,7 @@ const ls={get:k=>{try{return localStorage.getItem(k)}catch(e){return null}},set:
 let ws=null,ready=false,want=false,mic=null,actx=null,node=null,acc=[],accLen=0;
 let gain=null,pctx=null,pnode=null,cur=null,speaking=false;
 let queue=[],seg=null,busy=false,live=false,silence=0,floor=0.01,pre=[],wd=null;
-let turnBuf=[];
+let turnBuf=[],hist=[],vhist=[];
 
 if(ls.get('k'))$('key').value=ls.get('k');
 if(ls.get('m'))$('model').value=ls.get('m');
@@ -96,6 +98,7 @@ $('buf').value=ls.get('bf')||'400';
 if(ls.get('v'))$('vol').value=ls.get('v');
 $('mute').checked=ls.get('mu')==='1';
 $('pm').value=ls.get('pm')||'chunk';
+$('mf').value=ls.get('mf')||'1';
 $('gname').value=ls.get('gn')||'';
 $('gctx').value=ls.get('gc')||'';
 if(ls.get('k'))showMain();
@@ -104,7 +107,7 @@ $('save').onclick=()=>{
   const k=$('key').value.trim();
   if(!k){alert('کلیلەکە بنووسە');return}
   ls.set('k',k);ls.set('m',$('model').value);ls.set('s',$('speed').value);ls.set('mu',$('mute').checked?'1':'0');ls.set('sg',$('seg').value);ls.set('bf',$('buf').value);ls.set('v',$('vol').value);
-  ls.set('pm',$('pm').value);ls.set('gn',$('gname').value.trim());ls.set('gc',$('gctx').value.trim());
+  ls.set('pm',$('pm').value);ls.set('mf',$('mf').value);ls.set('gn',$('gname').value.trim());ls.set('gc',$('gctx').value.trim());
   showMain();
 };
 $('cfg').onclick=()=>{stop();$('main').classList.add('hidden');$('setup').classList.remove('hidden')};
@@ -197,7 +200,7 @@ function stop(){
   try{ws&&ws.close()}catch(e){}
   flushPlayback();
   try{pctx&&pctx.close()}catch(e){}
-  node=actx=mic=ws=pctx=pnode=null;queue=[];seg=null;busy=false;live=false;pre=[];silence=0;clearTimeout(wd);acc=[];accLen=0;cur=null;turnBuf=[];
+  node=actx=mic=ws=pctx=pnode=null;queue=[];seg=null;busy=false;live=false;pre=[];silence=0;clearTimeout(wd);acc=[];accLen=0;cur=null;turnBuf=[];hist=[];vhist=[];
   st('وەستا');
 }
 
@@ -224,7 +227,7 @@ function connect(){
     if(sc.outputTranscription&&sc.outputTranscription.text){ensure();cur.ku.textContent+=sc.outputTranscription.text}
     if(sc.modelTurn&&sc.modelTurn.parts)for(const p of sc.modelTurn.parts)if(p.inlineData&&p.inlineData.data)play(p.inlineData.data);
     if(sc.interrupted){turnBuf=[];flushPlayback()}
-    if(sc.turnComplete){flushTurn();cur=null;busy=false;clearTimeout(wd);if(seg&&!live&&!queue.length&&ready)goLive();pump();updQ()}
+    if(sc.turnComplete){flushTurn();cur=null;busy=false;clearTimeout(wd);if(seg&&seg.ok&&!live&&!queue.length&&ready)goLive();pump();updQ()}
   };
   ws.onclose=ev=>{
     if(mine!==ws)return;
@@ -288,20 +291,58 @@ function endSeg(){
   else queue.push(sg.c);
   updQ();pump();
 }
+/* دەنگی مرۆڤ (voiced): بەرزی دووبارەبوونەوەی ئۆتۆکۆرێلەیشن لە ٧٠-٤٠٠ هێرتز */
+function voicedFrame(c){
+  const n=c.length;let e0=0;
+  for(let i=0;i<n;i++)e0+=c[i]*c[i];
+  if(!e0)return 0;
+  let best=0;
+  for(let lag=40;lag<=228;lag++){
+    let s=0;const m=n-lag;
+    for(let i=0;i<m;i++)s+=c[i]*c[i+lag];
+    const r=(s/m)/(e0/n);
+    if(r>best)best=r;
+  }
+  return best;
+}
+/* ئایا ئەم دەنگە وەک قسە دەچێت؟ قسە: وزەی گۆڕاو (بڕگەکان) + دەنگی ئاواز‌دار. میوزیک: وزەی ڕاگیر. تەقینەوە/با: بێ ئاواز */
+function speechLike(mf,zcr){
+  if(zcr>0.35)return false;
+  if(hist.length<8)return true;
+  let m=0;for(const x of hist)m+=x;m/=hist.length;
+  let v=0;for(const x of hist)v+=(x-m)*(x-m);
+  const cv=Math.sqrt(v/hist.length)/(m||1e-9);
+  let vs=0;for(const x of vhist)vs+=x;
+  const vr=vs/vhist.length;
+  const cvMin=mf===2?0.45:0.3,vMin=mf===2?0.25:0.15;
+  return cv>cvMin&&vr>=vMin;
+}
 function onChunk(c){
-  let e=0;for(let i=0;i<c.length;i++){const v=c[i]/32768;e+=v*v}
-  const rms=Math.sqrt(e/c.length);
+  let e=0,z=0;
+  for(let i=0;i<c.length;i++){const v=c[i]/32768;e+=v*v;if(i&&((c[i]>=0)!==(c[i-1]>=0)))z++}
+  const rms=Math.sqrt(e/c.length),zcr=z/c.length;
   if(rms<floor)floor=rms;else floor+=(rms-floor)*0.002;
   let thr=Math.max(0.012,floor*2.5);
   if(speaking)thr*=2;
-  const sp=rms>thr,endMs=parseInt(ls.get('sg')||'600');
+  const loud=rms>thr,endMs=parseInt(ls.get('sg')||'600'),mf=parseInt(ls.get('mf')||'1');
+  hist.push(rms);vhist.push(mf>0&&loud&&zcr<0.3&&voicedFrame(c)>0.35?1:0);
+  if(hist.length>12){hist.shift();vhist.shift()}
+  const sp=mf>0?(loud&&speechLike(mf,zcr)):loud;
+  const need=mf===0?1:(mf===2?9:6);   // کەمترین ژمارەی فرەیمی وەک-قسە (هەر فرەیمێک ٤٠ میلی‌چرکە) تا بە ڕستە دابنرێت
   if(!seg){
-    pre.push(c);if(pre.length>5)pre.shift();
-    if(sp){seg={c:pre.slice(),sent:0};pre=[];silence=0;if(!busy&&!queue.length)goLive()}
+    pre.push(c);if(pre.length>8)pre.shift();
+    if(sp){
+      seg={c:pre.slice(),sent:0,n:1,ok:need<=1};pre=[];silence=0;
+      if(seg.ok&&!busy&&!queue.length)goLive();
+    }
   }else{
     seg.c.push(c);if(live)flushLive(seg);
-    silence=sp?0:silence+40;
-    if(silence>=endMs||seg.c.length*40>=8000)endSeg();
+    if(sp){seg.n++;silence=0}else silence+=40;
+    if(!seg.ok&&seg.n>=need){seg.ok=true;if(!busy&&!queue.length)goLive()}
+    if(!seg.ok){
+      // میوزیک یان دەنگی کورتی ناقسە: فڕێ دەدرێت و نانێردرێت و ناچێتە ڕیزەوە
+      if(silence>=400||seg.c.length*40>=3000){seg=null;silence=0;pre=[]}
+    }else if(silence>=endMs||seg.c.length*40>=8000)endSeg();
   }
 }
 
