@@ -24,7 +24,25 @@ jobs:
           gradle-version: '8.9'
       - name: Build debug APK
         working-directory: ${{ env.DIR }}
-        run: gradle assembleDebug --no-daemon --stacktrace
+        run: |
+          set +e
+          gradle assembleDebug --no-daemon --console=plain > build.log 2>&1
+          code=$?
+          if [ $code -ne 0 ]; then
+            plain=$(grep -E -B1 -A8 "^e: |\* What went wrong" build.log | head -60)
+            if [ -z "$plain" ]; then plain=$(tail -40 build.log); fi
+            enc=$(printf '%s' "$plain" | sed 's/%/%25/g' | awk '{printf "%s%%0A", $0}')
+            echo "::error title=Gradle error::$enc"
+            { echo '### Gradle error'; echo '```'; echo "$plain"; echo '```'; } >> "$GITHUB_STEP_SUMMARY"
+            exit 1
+          fi
+      - name: Upload full Gradle log
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: gradle-log
+          path: ${{ env.DIR }}/build.log
+          if-no-files-found: ignore
       - uses: actions/upload-artifact@v4
         with:
           name: KurdishTranslator-APK
