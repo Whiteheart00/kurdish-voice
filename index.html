@@ -74,7 +74,7 @@ input,select{width:100%;padding:10px;border-radius:10px;border:1px solid #4a7c9b
   <details class="card fl" id="flt" open>
 <summary>🎚️ فلتەری دەنگی دەوروبەر — ڕاستەوخۆ</summary>
 <div id="meter"><div id="mbar"></div><div id="mthr"></div></div>
-<div class="hint" style="margin:4px 0 0">هێڵە سوورەکە دەروازەیە؛ کاتێک بارەکە لێی تێپەڕێت (سەوز دەبێت) دەنگەکە دەنێردرێت بۆ وەرگێڕان.</div>
+<div class="hint" style="margin:4px 0 0">هێڵە سوورەکە دەروازەیە؛ کاتێک بارەکە لێی تێپەڕێت (سەوز دەبێت) دەنگەکە دەنێردرێت بۆ وەرگێڕان. فلتەرەکە دەنگی پشتەوە کەم دەکات، بەڵام ناتوانێت هەموو میوزیکێک بە تەواوی لە قسە جیا بکاتەوە.</div>
 <div class="fr"><div class="t"><span>دەروازەی دەنگ — بەرزتر = کەمتر هەستیار</span><b id="v_thr"></b></div><input type="range" id="f_thr" min="0.01" max="0.3" step="0.005"></div>
 <div class="fr"><div class="t"><span>هەستیاری مایک — کەمتر = دەنگی دوور نابیسترێت</span><b id="v_gain"></b></div><input type="range" id="f_gain" min="0.2" max="2" step="0.1"></div>
 <div class="fr"><div class="t"><span>بڕینی دەنگی قەڵەو و گڕەگڕ (Hz)</span><b id="v_hp"></b></div><input type="range" id="f_hp" min="0" max="600" step="10"></div>
@@ -109,10 +109,10 @@ if(ls.get('v'))$('vol').value=ls.get('v');
 $('mute').checked=ls.get('mu')==='1';
 
 /* ===== فلتەری دەنگی دەوروبەر ===== */
-const FD={v:2,thr:0.04,gain:1,mult:3,min:160,hp:150,lp:6500,agc:0,ns:1};
+const FD={v:3,thr:0.035,gain:1,mult:2.5,min:120,hp:120,lp:6000,agc:0,ns:1};
 let F=Object.assign({},FD),hpN=[],lpN=[],gN=null,calib=null,hot=0,lastMeter=0;
 try{Object.assign(F,JSON.parse(ls.get('flt')||'{}'))}catch(e){}
-if((F.v||0)<2)F=Object.assign({},FD);
+if((F.v||0)<3)F=Object.assign({},FD);
 const FM={thr:v=>(v*100).toFixed(1),gain:v=>'×'+(+v).toFixed(1),mult:v=>'×'+(+v).toFixed(1),min:v=>v+' ms',hp:v=>+v?v+' Hz':'ناچالاک',lp:v=>v+' Hz'};
 const saveF=()=>ls.set('flt',JSON.stringify(F));
 function mpos(v){return Math.min(1,Math.sqrt(v/0.3))*100}
@@ -213,7 +213,7 @@ registerProcessor('q',Q)`;
     pnode.connect(gain);
   }catch(err){st('❌ دەنگ: '+err.message);stop();return}
   try{
-    mic=await navigator.mediaDevices.getUserMedia({audio:{echoCancellation:true,noiseSuppression:!!F.ns,autoGainControl:!!F.agc,channelCount:1}});
+    mic=await navigator.mediaDevices.getUserMedia({audio:{echoCancellation:true,noiseSuppression:true,autoGainControl:false,channelCount:1,sampleRate:16000}});
     actx=new (window.AudioContext||window.webkitAudioContext)();
     const code="class P extends AudioWorkletProcessor{process(i){const c=i[0][0];if(c)this.port.postMessage(c.slice(0));return true}}registerProcessor('p',P)";
     await actx.audioWorklet.addModule(URL.createObjectURL(new Blob([code],{type:'application/javascript'})));
@@ -361,9 +361,11 @@ function onChunk(c){
   let e=0;for(let i=0;i<c.length;i++){const v=c[i]/32768;e+=v*v}
   const rms=Math.sqrt(e/c.length);
   if(rms<floor)floor=rms;else floor+=(rms-floor)*0.002;
+  // Adaptive gate: keep quiet/short speech while rejecting low-level background noise.
   let thr=Math.max(F.thr,floor*F.mult);
-  if(speaking)thr*=2;
-  const sp=rms>thr,endMs=parseInt(ls.get('sg')||'600');
+  // Do not raise the gate too aggressively while Kurdish audio is playing.
+  if(speaking)thr*=1.25;
+  const sp=rms>thr*0.85,endMs=parseInt(ls.get('sg')||'600');
   meter(rms,thr,sp);
   if(calib){calib.push(rms);return}
   const need=Math.max(1,Math.round(F.min/40));
