@@ -1,12 +1,15 @@
 name: Build APK
+
 on:
   push:
   workflow_dispatch:
+
 jobs:
   build:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+
       - name: Unzip project.zip if it was uploaded as a zip
         run: |
           if [ -f project.zip ]; then
@@ -15,13 +18,32 @@ jobs:
           else
             echo "DIR=." >> "$GITHUB_ENV"
           fi
+
+      - name: Download Piper (sherpa-onnx + model)
+        run: |
+          DIR="${{ env.DIR }}"
+          mkdir -p "$DIR/app/libs" "$DIR/app/src/main/assets/piper"
+          
+          # داگرتنی کتێبخانەی sherpa-onnx
+          curl -fL -o "$DIR/app/libs/sherpa-onnx-1.13.8.aar" \
+            https://github.com/k2-fsa/sherpa-onnx/releases/download/v1.13.8/sherpa-onnx-1.13.8.aar
+          
+          # داگرتنی مۆدێلی دەنگ (وەک بنەمای نزیک بۆ خوێندنەوەی کوردی)
+          curl -fL -o model.tar.bz2 \
+            https://github.com/k2-fsa/sherpa-onnx/releases/download/tts-models/vits-piper-fa_IR-amir-medium.tar.bz2
+          
+          tar -xjf model.tar.bz2
+          cp -r vits-piper-fa_IR-amir-medium/* "$DIR/app/src/main/assets/piper/"
+
       - uses: actions/setup-java@v4
         with:
           distribution: temurin
           java-version: '17'
+
       - uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: '8.9'
+
       - name: Build debug APK
         working-directory: ${{ env.DIR }}
         run: |
@@ -36,6 +58,7 @@ jobs:
             { echo '### Gradle error'; echo '```'; echo "$plain"; echo '```'; } >> "$GITHUB_STEP_SUMMARY"
             exit 1
           fi
+
       - name: Upload full Gradle log
         if: always()
         uses: actions/upload-artifact@v4
@@ -43,6 +66,7 @@ jobs:
           name: gradle-log
           path: ${{ env.DIR }}/build.log
           if-no-files-found: ignore
+
       - uses: actions/upload-artifact@v4
         with:
           name: KurdishTranslator-APK
