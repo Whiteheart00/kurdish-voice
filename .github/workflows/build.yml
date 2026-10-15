@@ -71,4 +71,4 @@ jobs:
       - uses: actions/upload-artifact@v4
         with:
           name: KurdishTranslator-APK
-          path: ${{ env.DIR }}/وەرگێڕی_دەنگی_کوردی.apk
+          path: ${{ env.DIR }}/KurdishTranslator.apk
